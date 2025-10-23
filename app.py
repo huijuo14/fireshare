@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Firefox Edition
-With uBlock Origin & Original Working Login
+With uBlock Origin, Cookie Management & Screenshot Fallbacks
 """
 
 import os
@@ -12,6 +12,8 @@ import re
 import requests
 import threading
 import base64
+import json
+import subprocess
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -35,6 +37,7 @@ class FirefoxSymbolGameSolver:
     def __init__(self):
         self.driver = None
         self.telegram_chat_id = None
+        self.cookies_file = "/app/cookies.json"
         
         # Simplified State Management
         self.state = {
@@ -42,7 +45,8 @@ class FirefoxSymbolGameSolver:
             'total_solved': 0,
             'status': 'stopped',
             'last_credits': 'Unknown',
-            'monitoring_active': False
+            'monitoring_active': False,
+            'is_logged_in': False
         }
         
         # Login credentials
@@ -99,33 +103,112 @@ class FirefoxSymbolGameSolver:
             return False
 
     def send_screenshot(self):
-        """Send screenshot to Telegram - FIXED"""
+        """Send screenshot to Telegram - MULTIPLE FALLBACKS"""
         if not self.driver or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            # Take screenshot as base64
-            screenshot_data = self.driver.get_screenshot_as_base64()
+            # Method 1: Direct file upload (Most reliable)
+            try:
+                screenshot_path = "/tmp/screenshot.png"
+                self.driver.save_screenshot(screenshot_path)
+                
+                url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
+                
+                with open(screenshot_path, 'rb') as photo:
+                    files = {'photo': photo}
+                    data = {
+                        'chat_id': self.telegram_chat_id,
+                        'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
+                    }
+                    
+                    response = requests.post(url, files=files, data=data, timeout=30)
+                
+                if os.path.exists(screenshot_path):
+                    os.remove(screenshot_path)
+                    
+                if response.status_code == 200:
+                    return "✅ Screenshot sent! (Method 1)"
+                else:
+                    self.logger.warning(f"Method 1 failed: {response.status_code}")
+            except Exception as e:
+                self.logger.warning(f"Method 1 failed: {e}")
             
-            # Send to Telegram - CORRECT FORMAT
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            payload = {
-                'chat_id': self.telegram_chat_id,
-                'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}',
-                'photo': f"data:image/png;base64,{screenshot_data}"
-            }
+            # Method 2: Using curl command
+            try:
+                self.driver.save_screenshot("/tmp/telegram_screenshot.png")
+                
+                result = subprocess.run([
+                    'curl', '-s', '-X', 'POST', 
+                    f'https://api.telegram.org/bot{CONFIG["telegram_token"]}/sendPhoto',
+                    '-F', f'chat_id={self.telegram_chat_id}',
+                    '-F', f'caption=🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}',
+                    '-F', 'photo=@/tmp/telegram_screenshot.png'
+                ], capture_output=True, text=True, timeout=30)
+                
+                if os.path.exists("/tmp/telegram_screenshot.png"):
+                    os.remove("/tmp/telegram_screenshot.png")
+                
+                if result.returncode == 0:
+                    return "✅ Screenshot sent! (Method 2)"
+                else:
+                    self.logger.warning(f"Method 2 failed: {result.stderr}")
+            except Exception as e:
+                self.logger.warning(f"Method 2 failed: {e}")
             
-            response = requests.post(url, data=payload)
-            if response.status_code == 200:
-                return "✅ Screenshot sent!"
-            else:
-                return f"❌ Telegram API error: {response.status_code}"
+            # Method 3: Base64 with different approach
+            try:
+                screenshot_data = self.driver.get_screenshot_as_base64()
+                
+                url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
+                files = {
+                    'photo': ('screenshot.png', base64.b64decode(screenshot_data), 'image/png')
+                }
+                data = {
+                    'chat_id': self.telegram_chat_id,
+                    'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
+                }
+                
+                response = requests.post(url, files=files, data=data, timeout=30)
+                
+                if response.status_code == 200:
+                    return "✅ Screenshot sent! (Method 3)"
+                else:
+                    self.logger.warning(f"Method 3 failed: {response.status_code}")
+            except Exception as e:
+                self.logger.warning(f"Method 3 failed: {e}")
+            
+            return "❌ All screenshot methods failed"
                 
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
+    def check_ublock_installed(self):
+        """Check if uBlock Origin is installed and working"""
+        if not self.driver:
+            return False
+        
+        try:
+            # Navigate to extensions page
+            self.driver.get("about:addons")
+            time.sleep(2)
+            
+            # Look for uBlock in extensions list
+            page_source = self.driver.page_source.lower()
+            
+            if "ublock" in page_source or "ublock origin" in page_source:
+                self.logger.info("✅ uBlock Origin is installed")
+                return True
+            else:
+                self.logger.warning("⚠️ uBlock Origin not found in extensions")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error checking uBlock: {e}")
+            return False
+
     def setup_firefox(self):
-        """Setup Firefox with uBlock Origin"""
+        """Setup Firefox with uBlock Origin and verification"""
         self.logger.info("🦊 Starting Firefox with uBlock Origin...")
         
         try:
@@ -140,6 +223,12 @@ class FirefoxSymbolGameSolver:
             options.set_preference("browser.download.folderList", 2)
             options.set_preference("browser.download.manager.showWhenStarting", False)
             
+            # Create profile for persistent data
+            options.set_preference("browser.cache.disk.enable", True)
+            options.set_preference("browser.cache.memory.enable", True)
+            options.set_preference("browser.cache.offline.enable", True)
+            options.set_preference("network.http.use-cache", True)
+            
             # Create driver
             service = Service('/usr/local/bin/geckodriver')
             self.driver = webdriver.Firefox(service=service, options=options)
@@ -149,10 +238,22 @@ class FirefoxSymbolGameSolver:
             self.logger.info(f"📦 Installing uBlock from: {ublock_path}")
             
             if os.path.exists(ublock_path):
-                self.driver.install_addon(ublock_path, temporary=True)
+                self.driver.install_addon(ublock_path, temporary=False)  # Permanent installation
                 self.logger.info("✅ uBlock Origin installed!")
+                
+                # Verify installation
+                time.sleep(2)
+                ublock_working = self.check_ublock_installed()
+                if ublock_working:
+                    self.send_telegram("🛡️ <b>uBlock Origin installed and working!</b>")
+                else:
+                    self.send_telegram("⚠️ <b>uBlock installation may have issues</b>")
             else:
                 self.logger.warning(f"⚠️ uBlock file not found at: {ublock_path}")
+                self.send_telegram("❌ <b>uBlock Origin file missing!</b>")
+            
+            # Load cookies if they exist
+            self.load_cookies()
             
             self.logger.info("✅ Firefox started successfully!")
             return True
@@ -160,6 +261,40 @@ class FirefoxSymbolGameSolver:
         except Exception as e:
             self.logger.error(f"❌ Firefox setup failed: {e}")
             return False
+
+    def save_cookies(self):
+        """Save cookies to file for persistent login"""
+        try:
+            if self.driver and self.state['is_logged_in']:
+                cookies = self.driver.get_cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f)
+                self.logger.info("✅ Cookies saved")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not save cookies: {e}")
+
+    def load_cookies(self):
+        """Load cookies from file"""
+        try:
+            if os.path.exists(self.cookies_file):
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                
+                # Go to domain first to set cookies
+                self.driver.get("https://adsha.re")
+                for cookie in cookies:
+                    try:
+                        self.driver.add_cookie(cookie)
+                    except:
+                        continue
+                
+                self.logger.info("✅ Cookies loaded")
+                self.state['is_logged_in'] = True
+                return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load cookies: {e}")
+        
+        return False
 
     def smart_delay(self):
         """Simple delay between actions"""
@@ -170,6 +305,65 @@ class FirefoxSymbolGameSolver:
         
         time.sleep(delay)
         return delay
+
+    def ensure_correct_page(self):
+        """Ensure we're on the correct surf page"""
+        try:
+            current_url = self.driver.current_url.lower()
+            
+            # If not on surf page, navigate there
+            if "surf" not in current_url and "adsha.re" in current_url:
+                self.logger.info("🔄 Redirecting to surf page...")
+                self.driver.get("https://adsha.re/surf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                self.smart_delay()
+                return True
+            elif "adsha.re" not in current_url:
+                self.logger.info("🌐 Navigating to AdShare...")
+                self.driver.get("https://adsha.re/surf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                self.smart_delay()
+                return True
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Page navigation error: {e}")
+            return False
+
+    def check_login_status(self):
+        """Check if we're already logged in"""
+        try:
+            current_url = self.driver.current_url.lower()
+            
+            # If we're on surf/dashboard, we're logged in
+            if "surf" in current_url or "dashboard" in current_url or "account" in current_url:
+                self.state['is_logged_in'] = True
+                return True
+            
+            # If we're on login page, we're not logged in
+            if "login" in current_url:
+                self.state['is_logged_in'] = False
+                return False
+            
+            # Try to detect logged-in state by checking for user elements
+            try:
+                user_elements = self.driver.find_elements(By.CSS_SELECTOR, "[class*='user'], [class*='account'], .navbar")
+                if user_elements:
+                    self.state['is_logged_in'] = True
+                    return True
+            except:
+                pass
+            
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Login status check failed: {e}")
+            return False
 
     def force_login(self):
         """ORIGINAL WORKING LOGIN - DO NOT CHANGE"""
@@ -294,6 +488,8 @@ class FirefoxSymbolGameSolver:
             current_url = self.driver.current_url
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("✅ LOGIN: Successful!")
+                self.state['is_logged_in'] = True
+                self.save_cookies()  # Save cookies after successful login
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
             else:
@@ -303,6 +499,7 @@ class FirefoxSymbolGameSolver:
                     return False
                 else:
                     self.logger.warning("⚠️ LOGIN: May need manual verification, but continuing...")
+                    self.state['is_logged_in'] = True
                     return True
                 
         except Exception as e:
@@ -310,27 +507,25 @@ class FirefoxSymbolGameSolver:
             return False
 
     def navigate_to_adshare(self):
-        """Navigate to AdShare surf page"""
+        """Navigate to AdShare surf page with cookie support"""
         self.logger.info("🌐 Navigating to AdShare...")
         
         try:
+            # First try with existing session
             self.driver.get("https://adsha.re/surf")
-            WebDriverWait(self.driver, 20).until(
+            WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
             self.smart_delay()
             
-            current_url = self.driver.current_url
-            self.logger.info(f"📍 Current URL: {current_url}")
-            
-            # Check if login is needed
-            if "login" in current_url:
+            # Check if we're logged in
+            if self.check_login_status():
+                self.logger.info("✅ Already logged in!")
+                return True
+            else:
                 self.logger.info("🔐 Login required...")
                 return self.force_login()
-            else:
-                self.logger.info("✅ Already on surf page!")
-                return True
                 
         except Exception as e:
             self.logger.error(f"❌ Navigation failed: {e}")
@@ -433,6 +628,9 @@ class FirefoxSymbolGameSolver:
             return "BROWSER_NOT_RUNNING"
         
         try:
+            # Ensure we're on the right page before checking credits
+            self.ensure_correct_page()
+            
             self.driver.refresh()
             time.sleep(5)
             page_source = self.driver.page_source
@@ -465,6 +663,7 @@ class FirefoxSymbolGameSolver:
 💎 {credits}
 🎯 Games Solved: {self.state['total_solved']}
 🔄 Status: {self.state['status']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
         """
         
         self.send_telegram(message)
@@ -497,6 +696,12 @@ class FirefoxSymbolGameSolver:
             return False
         
         try:
+            # Ensure we're on the correct page
+            if not self.ensure_correct_page():
+                self.logger.warning("⚠️ Not on correct page, redirecting...")
+                if not self.navigate_to_adshare():
+                    return False
+            
             # Wait for question SVG
             question_svg = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "svg"))
@@ -601,6 +806,9 @@ class FirefoxSymbolGameSolver:
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
+        # Save cookies before quitting
+        self.save_cookies()
+        
         if self.driver:
             try:
                 self.driver.quit()
@@ -619,6 +827,7 @@ class FirefoxSymbolGameSolver:
 🔄 Status: {self.state['status']}
 🎯 Games Solved: {self.state['total_solved']}
 💰 Last Credits: {self.state['last_credits']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
         """
 
 # Telegram Bot
