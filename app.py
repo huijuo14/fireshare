@@ -46,7 +46,7 @@ class FirefoxSymbolGameSolver:
         }
         
         # Login credentials
-        self.email = "jiocloud90@gmail.com"
+        self.email = "loginallapps@gmail.com"
         self.password = "@Sd2007123"
         
         self.solver_thread = None
@@ -99,29 +99,27 @@ class FirefoxSymbolGameSolver:
             return False
 
     def send_screenshot(self):
-        """Send screenshot to Telegram"""
+        """Send screenshot to Telegram - FIXED"""
         if not self.driver or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            # Take screenshot
-            screenshot = self.driver.get_screenshot_as_base64()
+            # Take screenshot as base64
+            screenshot_data = self.driver.get_screenshot_as_base64()
             
-            # Send to Telegram
+            # Send to Telegram - CORRECT FORMAT
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            files = {
-                'photo': screenshot
-            }
-            data = {
+            payload = {
                 'chat_id': self.telegram_chat_id,
-                'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
+                'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}',
+                'photo': f"data:image/png;base64,{screenshot_data}"
             }
             
-            response = requests.post(url, data=data, files=files)
+            response = requests.post(url, data=payload)
             if response.status_code == 200:
                 return "✅ Screenshot sent!"
             else:
-                return f"❌ Failed to send screenshot: {response.status_code}"
+                return f"❌ Telegram API error: {response.status_code}"
                 
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
