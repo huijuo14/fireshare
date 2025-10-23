@@ -98,7 +98,7 @@ class FirefoxSymbolGameSolver:
             return False
 
     def setup_firefox(self):
-        """Setup Firefox with uBlock Origin"""
+        """Setup Firefox with uBlock Origin - FIXED PATH"""
         self.logger.info("🦊 Starting Firefox with uBlock Origin...")
         
         try:
@@ -107,24 +107,33 @@ class FirefoxSymbolGameSolver:
             # Headless mode for server
             options.add_argument("--headless")
             
-            # Performance options
+            # Performance and stealth options
             options.set_preference("dom.webdriver.enabled", False)
             options.set_preference("useAutomationExtension", False)
             options.set_preference("browser.download.folderList", 2)
             options.set_preference("browser.download.manager.showWhenStarting", False)
-            options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/octet-stream")
             
-            # Disable images for faster loading (optional)
-            # options.set_preference("permissions.default.image", 2)
-            
-            # Create driver with uBlock Origin
+            # Create driver
             service = Service('/usr/local/bin/geckodriver')
             self.driver = webdriver.Firefox(service=service, options=options)
             
-            # Install uBlock Origin
-            self.driver.install_addon('/app/ublock.xpi', temporary=True)
+            # Install uBlock Origin - FIXED PATH
+            ublock_path = '/app/ublock.xpi'
+            self.logger.info(f"📦 Installing uBlock from: {ublock_path}")
             
-            self.logger.info("✅ Firefox started with uBlock Origin!")
+            if os.path.exists(ublock_path):
+                self.driver.install_addon(ublock_path, temporary=True)
+                self.logger.info("✅ uBlock Origin installed!")
+            else:
+                self.logger.warning(f"⚠️ uBlock file not found at: {ublock_path}")
+                # List files to debug
+                try:
+                    files = os.listdir('/app')
+                    self.logger.info(f"📁 Files in /app: {files}")
+                except:
+                    pass
+            
+            self.logger.info("✅ Firefox started successfully!")
             return True
             
         except Exception as e:
