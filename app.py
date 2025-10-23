@@ -52,7 +52,7 @@ class FirefoxSymbolGameSolver:
         }
         
         # Login credentials
-        self.email = "loginallapps@gmail.com"
+        self.email = "jiocloud90@gmail.com"
         self.password = "@Sd2007123"
         
         self.solver_thread = None
