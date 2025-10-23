@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Firefox Edition
-With uBlock Origin & Simplified Clicking
+With uBlock Origin & Original Working Login
 """
 
 import os
@@ -11,6 +11,7 @@ import logging
 import re
 import requests
 import threading
+import base64
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -97,8 +98,36 @@ class FirefoxSymbolGameSolver:
             self.logger.error(f"❌ Telegram send failed: {e}")
             return False
 
+    def send_screenshot(self):
+        """Send screenshot to Telegram"""
+        if not self.driver or not self.telegram_chat_id:
+            return "❌ Browser not running or Telegram not configured"
+        
+        try:
+            # Take screenshot
+            screenshot = self.driver.get_screenshot_as_base64()
+            
+            # Send to Telegram
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
+            files = {
+                'photo': screenshot
+            }
+            data = {
+                'chat_id': self.telegram_chat_id,
+                'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
+            }
+            
+            response = requests.post(url, data=data, files=files)
+            if response.status_code == 200:
+                return "✅ Screenshot sent!"
+            else:
+                return f"❌ Failed to send screenshot: {response.status_code}"
+                
+        except Exception as e:
+            return f"❌ Screenshot error: {str(e)}"
+
     def setup_firefox(self):
-        """Setup Firefox with uBlock Origin - FIXED PATH"""
+        """Setup Firefox with uBlock Origin"""
         self.logger.info("🦊 Starting Firefox with uBlock Origin...")
         
         try:
@@ -117,7 +146,7 @@ class FirefoxSymbolGameSolver:
             service = Service('/usr/local/bin/geckodriver')
             self.driver = webdriver.Firefox(service=service, options=options)
             
-            # Install uBlock Origin - FIXED PATH
+            # Install uBlock Origin
             ublock_path = '/app/ublock.xpi'
             self.logger.info(f"📦 Installing uBlock from: {ublock_path}")
             
@@ -126,12 +155,6 @@ class FirefoxSymbolGameSolver:
                 self.logger.info("✅ uBlock Origin installed!")
             else:
                 self.logger.warning(f"⚠️ uBlock file not found at: {ublock_path}")
-                # List files to debug
-                try:
-                    files = os.listdir('/app')
-                    self.logger.info(f"📁 Files in /app: {files}")
-                except:
-                    pass
             
             self.logger.info("✅ Firefox started successfully!")
             return True
@@ -151,101 +174,141 @@ class FirefoxSymbolGameSolver:
         return delay
 
     def force_login(self):
-        """Login to AdShare"""
+        """ORIGINAL WORKING LOGIN - DO NOT CHANGE"""
         try:
-            self.logger.info("🔐 Attempting login...")
+            self.logger.info("🔐 LOGIN: Attempting login with dynamic field detection...")
             
+            # Navigate to login page
             login_url = "https://adsha.re/login"
             self.driver.get(login_url)
             
+            # Wait for page to load
             WebDriverWait(self.driver, 20).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
             self.smart_delay()
             
-            # Parse page to find password field
+            # Get page source and parse with BeautifulSoup
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
             
+            # Find the login form
             form = soup.find('form', {'name': 'login'})
             if not form:
-                self.logger.error("❌ Could not find login form")
+                self.logger.error("❌ LOGIN: Could not find login form")
                 return False
             
-            # Find password field name
+            # Find the dynamic password field name
             password_field_name = None
             for field in form.find_all('input'):
                 field_name = field.get('name', '')
                 field_value = field.get('value', '')
                 
+                # Look for password field - dynamic detection logic
                 if field_value == 'Password' and field_name != 'mail' and field_name:
                     password_field_name = field_name
                     break
             
             if not password_field_name:
-                self.logger.error("❌ Could not detect password field name")
+                self.logger.error("❌ LOGIN: Could not detect password field name")
                 return False
             
-            self.logger.info(f"🔑 Detected password field: {password_field_name}")
+            self.logger.info(f"🔑 LOGIN: Detected password field name: {password_field_name}")
             
-            # Fill email
-            email_selectors = ["input[name='mail']", "input[type='email']"]
+            # Fill email field
+            email_selectors = [
+                "input[name='mail']",
+                "input[type='email']",
+                "input[placeholder*='email' i]"
+            ]
+            
+            email_filled = False
             for selector in email_selectors:
                 try:
                     email_field = self.driver.find_element(By.CSS_SELECTOR, selector)
                     email_field.clear()
                     email_field.send_keys(self.email)
-                    self.logger.info("✅ Email entered")
+                    self.logger.info("✅ LOGIN: Email entered")
+                    email_filled = True
                     break
                 except:
                     continue
             
+            if not email_filled:
+                self.logger.error("❌ LOGIN: Could not find email field")
+                return False
+            
             self.smart_delay()
             
-            # Fill password
+            # Fill password field using detected name
             password_selector = f"input[name='{password_field_name}']"
             try:
                 password_field = self.driver.find_element(By.CSS_SELECTOR, password_selector)
                 password_field.clear()
                 password_field.send_keys(self.password)
-                self.logger.info("✅ Password entered")
+                self.logger.info("✅ LOGIN: Password entered")
             except:
-                self.logger.error(f"❌ Could not find password field: {password_selector}")
+                self.logger.error(f"❌ LOGIN: Could not find password field with selector: {password_selector}")
                 return False
             
             self.smart_delay()
             
-            # Click login button
-            login_selectors = ["button[type='submit']", "input[type='submit']", "button"]
+            # Find and click login button - ORIGINAL WORKING CODE
+            login_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button",
+                "input[value*='Login']",
+                "input[value*='Sign']"
+            ]
+            
+            login_clicked = False
             for selector in login_selectors:
                 try:
                     login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
                     if login_btn.is_displayed() and login_btn.is_enabled():
                         login_btn.click()
-                        self.logger.info("✅ Login button clicked")
+                        self.logger.info("✅ LOGIN: Login button clicked")
+                        login_clicked = True
                         break
                 except:
                     continue
             
-            # Wait for login
+            if not login_clicked:
+                # Fallback: try to submit the form
+                try:
+                    form_element = self.driver.find_element(By.CSS_SELECTOR, "form[name='login']")
+                    form_element.submit()
+                    self.logger.info("✅ LOGIN: Form submitted")
+                    login_clicked = True
+                except:
+                    pass
+            
+            # Wait for login to complete
+            self.smart_delay()
             time.sleep(8)
             
-            # Check if successful
+            # Check if login successful by navigating to surf page
             self.driver.get("https://adsha.re/surf")
-            time.sleep(3)
+            self.smart_delay()
             
             current_url = self.driver.current_url
             if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("✅ Login successful!")
+                self.logger.info("✅ LOGIN: Successful!")
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
             else:
-                self.logger.warning("⚠️ May need manual verification")
-                return True
+                # Check if we're still on login page
+                if "login" in current_url:
+                    self.logger.error("❌ LOGIN: Failed - still on login page")
+                    return False
+                else:
+                    self.logger.warning("⚠️ LOGIN: May need manual verification, but continuing...")
+                    return True
                 
         except Exception as e:
-            self.logger.error(f"❌ Login error: {e}")
+            self.logger.error(f"❌ LOGIN: Error - {e}")
             return False
 
     def navigate_to_adshare(self):
@@ -261,6 +324,9 @@ class FirefoxSymbolGameSolver:
             self.smart_delay()
             
             current_url = self.driver.current_url
+            self.logger.info(f"📍 Current URL: {current_url}")
+            
+            # Check if login is needed
             if "login" in current_url:
                 self.logger.info("🔐 Login required...")
                 return self.force_login()
@@ -608,6 +674,8 @@ class TelegramBot:
         elif text.startswith('/credits'):
             credits = self.solver.extract_credits()
             response = f"💰 <b>Credits:</b> {credits}"
+        elif text.startswith('/screenshot'):
+            response = self.solver.send_screenshot()
         elif text.startswith('/help'):
             response = """
 🤖 <b>AdShare Solver Commands</b>
@@ -616,6 +684,7 @@ class TelegramBot:
 /stop - Stop solver  
 /status - Check status
 /credits - Get credits
+/screenshot - Get real-time screenshot
 /help - Show help
 
 💡 Auto credit reports every 30 minutes
