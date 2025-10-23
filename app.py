@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Firefox Edition
-WITH CRASH RECOVERY & FULL CONFIGURATION
+WITH ALL FEATURES & SMART SESSION MANAGEMENT
 """
 
 import os
@@ -26,8 +26,8 @@ from bs4 import BeautifulSoup
 # ==================== FULLY CONFIGURABLE SETTINGS ====================
 CONFIG = {
     # Basic Settings
-    'email': "jiocloud90@gmail.com",  # CHANGE THIS
-    'password': "@Sd2007123",  # CHANGE THIS
+    'email': "jiocloud90@gmail.com",
+    'password': "@Sd2007123",
     
     # Timing Settings
     'base_delay': 2,
@@ -43,13 +43,13 @@ CONFIG = {
     'max_consecutive_failures': 10,
     'auto_restart_on_crash': True,
     'max_restarts_per_hour': 3,
-    'browser_heartbeat_interval': 30,  # seconds
+    'browser_heartbeat_interval': 30,
     
     # Memory Optimization Settings
     'enable_memory_optimization': True,
-    'max_js_memory_mb': 100,  # Increased for stability
-    'enable_disk_cache': True,  # Keep enabled for stability
-    'enable_memory_cache': True,  # Keep enabled for stability
+    'max_js_memory_mb': 100,
+    'enable_disk_cache': True,
+    'enable_memory_cache': True,
     
     # Error Handling Settings
     'send_screenshot_on_error': True,
@@ -57,7 +57,7 @@ CONFIG = {
     'refresh_page_after_failures': 5,
     
     # Performance Settings
-    'page_load_timeout': 60,  # Increased timeout
+    'page_load_timeout': 60,
     'element_timeout': 30,
 }
 
@@ -66,8 +66,9 @@ class FirefoxSymbolGameSolver:
         self.driver = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
+        self.session_file = "/app/session_status.json"
         
-        # Enhanced State Management with Crash Recovery
+        # Enhanced State Management
         self.state = {
             'is_running': False,
             'total_solved': 0,
@@ -81,7 +82,8 @@ class FirefoxSymbolGameSolver:
             'last_crash_time': 0,
             'last_heartbeat': 0,
             'restart_count': 0,
-            'last_restart_time': 0
+            'last_restart_time': 0,
+            'session_valid': False
         }
         
         self.solver_thread = None
@@ -89,6 +91,7 @@ class FirefoxSymbolGameSolver:
         self.heartbeat_thread = None
         self.setup_logging()
         self.setup_telegram()
+        self.load_session_status()
     
     def setup_logging(self):
         """Setup logging"""
@@ -109,7 +112,7 @@ class FirefoxSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"✅ Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Crash Recovery!</b>")
+                    self.send_telegram("🤖 <b>AdShare Solver Started with Smart Session Management!</b>")
                     return True
             return False
         except Exception as e:
@@ -135,12 +138,12 @@ class FirefoxSymbolGameSolver:
             return False
 
     def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram with custom caption"""
+        """Send screenshot to Telegram"""
         if not self.driver or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            screenshot_path = "/tmp/error_screenshot.png"
+            screenshot_path = "/tmp/screenshot.png"
             self.driver.save_screenshot(screenshot_path)
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
@@ -157,31 +160,121 @@ class FirefoxSymbolGameSolver:
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
                 
-            if response.status_code == 200:
-                return "✅ Screenshot sent to Telegram!"
-            else:
-                return f"❌ Screenshot failed: {response.status_code}"
+            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
                 
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
+    # ==================== SESSION MANAGEMENT ====================
+    def save_session_status(self):
+        """Save session status to file"""
+        try:
+            session_data = {
+                'is_logged_in': self.state['is_logged_in'],
+                'session_valid': self.state['session_valid'],
+                'last_login': time.time() if self.state['is_logged_in'] else 0,
+                'total_solved': self.state['total_solved']
+            }
+            with open(self.session_file, 'w') as f:
+                json.dump(session_data, f)
+            self.logger.info("💾 Session status saved")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not save session status: {e}")
+
+    def load_session_status(self):
+        """Load session status from file"""
+        try:
+            if os.path.exists(self.session_file):
+                with open(self.session_file, 'r') as f:
+                    session_data = json.load(f)
+                self.state['is_logged_in'] = session_data.get('is_logged_in', False)
+                self.state['session_valid'] = session_data.get('session_valid', False)
+                self.state['total_solved'] = session_data.get('total_solved', 0)
+                self.logger.info("💾 Session status loaded")
+                return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load session status: {e}")
+        return False
+
+    def save_cookies(self):
+        """Save cookies to file"""
+        try:
+            if self.driver and self.state['is_logged_in'] and self.is_browser_alive():
+                cookies = self.driver.get_cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f)
+                self.state['session_valid'] = True
+                self.save_session_status()
+                self.logger.info("🍪 Cookies saved")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not save cookies: {e}")
+
+    def load_cookies(self):
+        """Load cookies from file - ONLY if session is valid"""
+        try:
+            if (os.path.exists(self.cookies_file) and 
+                self.state['session_valid'] and 
+                self.state['is_logged_in'] and
+                self.is_browser_alive()):
+                
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                
+                self.driver.get("https://adsha.re")
+                for cookie in cookies:
+                    try:
+                        self.driver.add_cookie(cookie)
+                    except:
+                        continue
+                
+                self.logger.info("🍪 Cookies loaded - Session reused")
+                return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load cookies: {e}")
+        
+        return False
+
+    def validate_session(self):
+        """Check if current session is still valid"""
+        if not self.is_browser_alive():
+            return False
+        
+        try:
+            self.driver.get("https://adsha.re/surf")
+            time.sleep(2)
+            
+            # Check if we're on surf page (logged in)
+            if "surf" in self.driver.current_url:
+                self.state['is_logged_in'] = True
+                self.state['session_valid'] = True
+                self.save_session_status()
+                self.logger.info("✅ Session validated - Still logged in")
+                return True
+            else:
+                self.state['is_logged_in'] = False
+                self.state['session_valid'] = False
+                self.save_session_status()
+                self.logger.warning("⚠️ Session invalid - Need to login")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Session validation failed: {e}")
+            return False
+
+    # ==================== CRASH RECOVERY ====================
     def is_browser_alive(self):
-        """Check if browser is still responsive"""
+        """Check if browser is responsive"""
         try:
             if not self.driver:
                 return False
-            
-            # Try to get current URL - if it works, browser is alive
             self.driver.current_url
             self.state['last_heartbeat'] = time.time()
             return True
-            
-        except (WebDriverException, Exception) as e:
-            self.logger.warning(f"⚠️ Browser heartbeat failed: {e}")
+        except (WebDriverException, Exception):
             return False
 
     def heartbeat_monitor(self):
-        """Monitor browser health and auto-restart if crashed"""
+        """Monitor browser health"""
         self.logger.info("❤️ Starting browser heartbeat monitor...")
         
         while self.state['is_running']:
@@ -194,7 +287,6 @@ class FirefoxSymbolGameSolver:
                     if CONFIG['auto_restart_on_crash']:
                         self.auto_restart_browser()
                     else:
-                        self.logger.error("❌ Auto-restart disabled, stopping solver")
                         self.stop()
                         break
                 
@@ -208,8 +300,7 @@ class FirefoxSymbolGameSolver:
         """Auto-restart browser after crash"""
         current_time = time.time()
         
-        # Check restart limits
-        if current_time - self.state['last_restart_time'] < 3600:  # 1 hour
+        if current_time - self.state['last_restart_time'] < 3600:
             self.state['restart_count'] += 1
         else:
             self.state['restart_count'] = 1
@@ -217,383 +308,94 @@ class FirefoxSymbolGameSolver:
         
         if self.state['restart_count'] > CONFIG['max_restarts_per_hour']:
             self.logger.error("🚨 Too many restarts, stopping solver")
-            self.send_telegram("🚨 <b>Too many browser crashes!</b>\nStopping solver for stability")
+            self.send_telegram("🚨 <b>Too many browser crashes!</b>\nStopping solver")
             self.stop()
             return False
         
-        self.logger.info(f"🔄 Auto-restarting browser ({self.state['restart_count']}/{CONFIG['max_restarts_per_hour']} this hour)")
+        self.logger.info(f"🔄 Auto-restarting browser ({self.state['restart_count']}/{CONFIG['max_restarts_per_hour']})")
         self.send_telegram("🔄 <b>Browser crashed - Auto-restarting...</b>")
         
-        # Clean up dead browser
         try:
             if self.driver:
                 self.driver.quit()
         except:
             pass
         
-        # Start fresh browser
         time.sleep(5)
         return self.setup_firefox()
 
+    # ==================== FIREFOX SETUP ====================
     def setup_firefox(self):
-        """Setup Firefox with STABLE configuration"""
-        self.logger.info("🦊 Starting Firefox with STABLE configuration...")
+        """Setup Firefox with optimization"""
+        self.logger.info("🦊 Starting Firefox with optimizations...")
         
         try:
             options = Options()
-            
-            # BASIC STABLE SETUP
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")  # Critical for containers
-            
-            # REMOVED PROBLEMATIC FLAGS THAT CAUSE CRASHES:
-            # ❌ NO process limits (causes instability)
-            # ❌ NO cache disabling (causes performance issues)
-            # ❌ NO render disabling (breaks symbols)
+            options.add_argument("--disable-dev-shm-usage")
             
             if CONFIG['enable_memory_optimization']:
-                # ✅ SAFE memory optimizations only
-                options.set_preference("javascript.options.mem.max", CONFIG['max_js_memory_mb'] * 1024)  # MB to KB
-                options.set_preference("browser.sessionhistory.max_entries", 5)  # Mild reduction
-                options.set_preference("media.memory_cache_max_size", 4096)  # 4MB media cache
-                options.set_preference("image.mem.max_decoded_image_kb", 2048)  # 2MB image cache
-                
-                self.logger.info("✅ Safe memory optimizations applied")
+                options.set_preference("javascript.options.mem.max", CONFIG['max_js_memory_mb'] * 1024)
+                options.set_preference("browser.sessionhistory.max_entries", 5)
+                options.set_preference("media.memory_cache_max_size", 4096)
+                options.set_preference("image.mem.max_decoded_image_kb", 2048)
+                self.logger.info("✅ Memory optimizations applied")
             
-            # ✅ CRITICAL - KEEP ENABLED FOR STABILITY:
-            options.set_preference("permissions.default.image", 2)  # MUST ALLOW IMAGES
-            options.set_preference("gfx.webrender.all", True)  # KEEP modern rendering
+            options.set_preference("permissions.default.image", 2)
+            options.set_preference("gfx.webrender.all", True)
             options.set_preference("browser.cache.disk.enable", CONFIG['enable_disk_cache'])
             options.set_preference("browser.cache.memory.enable", CONFIG['enable_memory_cache'])
-            
-            # ✅ PERFORMANCE TWEAKS:
             options.set_preference("network.http.max-connections", 20)
-            options.set_preference("browser.sessionstore.interval", 120000)  # 2 minutes
             
-            # ✅ TIMEOUT CONFIGURATION:
-            options.set_preference("dom.max_script_run_time", 30)
-            options.set_preference("dom.max_chrome_script_run_time", 30)
-            
-            # Create driver with proper timeouts
             service = Service('/usr/local/bin/geckodriver')
-            self.driver = webdriver.Firefox(
-                service=service, 
-                options=options
-            )
-            
-            # Set timeouts
+            self.driver = webdriver.Firefox(service=service, options=options)
             self.driver.set_page_load_timeout(CONFIG['page_load_timeout'])
-            self.driver.implicitly_wait(10)
             
-            # Install uBlock Origin
+            # Install uBlock
             ublock_path = '/app/ublock.xpi'
             if os.path.exists(ublock_path):
                 self.driver.install_addon(ublock_path, temporary=False)
-                self.logger.info("✅ uBlock Origin installed!")
-            
-            # Load cookies if they exist
-            self.load_cookies()
+                self.logger.info("✅ uBlock Origin installed")
             
             self.state['last_heartbeat'] = time.time()
-            self.logger.info("✅ Firefox started successfully with stable configuration!")
+            self.logger.info("✅ Firefox started successfully!")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Firefox setup failed: {e}")
             return False
 
-    def save_cookies(self):
-        """Save cookies to file for persistent login"""
-        try:
-            if self.driver and self.state['is_logged_in'] and self.is_browser_alive():
-                cookies = self.driver.get_cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f)
-                self.logger.info("✅ Cookies saved")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not save cookies: {e}")
-
-    def load_cookies(self):
-        """Load cookies from file"""
-        try:
-            if os.path.exists(self.cookies_file) and self.is_browser_alive():
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                
-                # Go to domain first to set cookies
-                self.driver.get("https://adsha.re")
-                for cookie in cookies:
-                    try:
-                        self.driver.add_cookie(cookie)
-                    except:
-                        continue
-                
-                self.logger.info("✅ Cookies loaded")
-                self.state['is_logged_in'] = True
+    # ==================== SMART SESSION HANDLING ====================
+    def smart_login_flow(self):
+        """Smart login flow with session reuse"""
+        self.logger.info("🔐 Starting smart login flow...")
+        
+        # Step 1: Try to use existing session first
+        if self.state['session_valid'] and self.state['is_logged_in']:
+            self.logger.info("🔄 Attempting to reuse existing session...")
+            if self.load_cookies() and self.validate_session():
+                self.logger.info("✅ Session reused successfully!")
                 return True
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not load cookies: {e}")
         
-        return False
-
-    def smart_delay(self):
-        """Simple delay between actions"""
-        if CONFIG['random_delay']:
-            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
-        else:
-            delay = CONFIG['base_delay']
-        
-        time.sleep(delay)
-        return delay
-
-    def handle_consecutive_failures(self):
-        """Enhanced error handling with configurable limits"""
-        self.state['consecutive_fails'] += 1
-        current_fails = self.state['consecutive_fails']
-        
-        self.logger.warning(f"⚠️ Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
-        
-        # Check browser health first
-        if not self.is_browser_alive():
-            self.logger.error("🚨 Browser dead during failure handling!")
-            return
-        
-        # 🚨 LEVEL 1: Send screenshot on first failure
-        if current_fails == 1 and CONFIG['send_screenshot_on_error']:
-            cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
-            if cooldown_passed:
-                self.logger.info("📸 Sending error screenshot to Telegram...")
-                screenshot_result = self.send_screenshot("❌ Game Error - No game solved")
-                self.send_telegram(f"⚠️ <b>Game Error Detected</b>\nNo game solved (1/{CONFIG['max_consecutive_failures']} fails)\n{screenshot_result}")
-                self.state['last_error_screenshot'] = time.time()
-        
-        # 🚨 LEVEL 2: Refresh page after configured failures
-        elif current_fails >= CONFIG['refresh_page_after_failures']:
-            self.logger.warning(f"🔄 Too many failures! Refreshing page...")
-            self.send_telegram(f"🔄 <b>Refreshing page</b> due to {current_fails}+ consecutive failures")
-            
-            try:
-                self.driver.get("https://adsha.re/surf")
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                self.smart_delay()
-                self.logger.info("✅ Page refreshed successfully")
-                self.state['consecutive_fails'] = 0  # Reset counter
-            except Exception as e:
-                self.logger.error(f"❌ Page refresh failed: {e}")
-        
-        # 🚨 LEVEL 3: Stop at max failures
-        elif current_fails >= CONFIG['max_consecutive_failures']:
-            self.logger.error(f"🚨 CRITICAL: {current_fails} consecutive failures! Stopping solver...")
-            self.send_telegram(f"🚨 <b>CRITICAL ERROR</b>\n{current_fails} consecutive failures - Stopping solver")
-            self.stop()
-
-    def ensure_correct_page(self):
-        """Ensure we're on the correct surf page with browser health check"""
-        if not self.is_browser_alive():
-            self.logger.error("❌ Browser dead during page check")
-            return False
-            
-        try:
-            current_url = self.driver.current_url.lower()
-            
-            if "surf" not in current_url and "adsha.re" in current_url:
-                self.logger.info("🔄 Redirecting to surf page...")
-                self.driver.get("https://adsha.re/surf")
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                self.smart_delay()
-                return True
-            elif "adsha.re" not in current_url:
-                self.logger.info("🌐 Navigating to AdShare...")
-                self.driver.get("https://adsha.re/surf")
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                self.smart_delay()
-                return True
-            
+        # Step 2: Session invalid, force login
+        self.logger.info("🔄 Session invalid or expired, forcing login...")
+        if self.force_login():
+            self.state['is_logged_in'] = True
+            self.state['session_valid'] = True
+            self.save_cookies()
+            self.save_session_status()
+            self.logger.info("✅ New login successful!")
             return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Page navigation error: {e}")
-            return False
-
-    def check_login_status(self):
-        """Check if we're already logged in"""
-        if not self.is_browser_alive():
-            return False
-            
-        try:
-            current_url = self.driver.current_url.lower()
-            
-            if "surf" in current_url or "dashboard" in current_url or "account" in current_url:
-                self.state['is_logged_in'] = True
-                return True
-            
-            if "login" in current_url:
-                self.state['is_logged_in'] = False
-                return False
-            
-            try:
-                user_elements = self.driver.find_elements(By.CSS_SELECTOR, "[class*='user'], [class*='account'], .navbar")
-                if user_elements:
-                    self.state['is_logged_in'] = True
-                    return True
-            except:
-                pass
-            
-            return False
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Login status check failed: {e}")
-            return False
-
-    def force_login(self):
-        """Login with configurable email/password"""
-        if not self.is_browser_alive():
-            self.logger.error("❌ Browser dead during login")
-            return False
-            
-        try:
-            self.logger.info("🔐 LOGIN: Attempting login...")
-            
-            login_url = "https://adsha.re/login"
-            self.driver.get(login_url)
-            
-            WebDriverWait(self.driver, 20).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            
-            self.smart_delay()
-            
-            page_source = self.driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            
-            form = soup.find('form', {'name': 'login'})
-            if not form:
-                self.logger.error("❌ LOGIN: Could not find login form")
-                return False
-            
-            password_field_name = None
-            for field in form.find_all('input'):
-                field_name = field.get('name', '')
-                field_value = field.get('value', '')
-                
-                if field_value == 'Password' and field_name != 'mail' and field_name:
-                    password_field_name = field_name
-                    break
-            
-            if not password_field_name:
-                self.logger.error("❌ LOGIN: Could not detect password field name")
-                return False
-            
-            self.logger.info(f"🔑 LOGIN: Detected password field name: {password_field_name}")
-            
-            # Fill email field
-            email_selectors = [
-                "input[name='mail']",
-                "input[type='email']",
-                "input[placeholder*='email' i]"
-            ]
-            
-            email_filled = False
-            for selector in email_selectors:
-                try:
-                    email_field = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    email_field.clear()
-                    email_field.send_keys(CONFIG['email'])  # Use configurable email
-                    self.logger.info("✅ LOGIN: Email entered")
-                    email_filled = True
-                    break
-                except:
-                    continue
-            
-            if not email_filled:
-                self.logger.error("❌ LOGIN: Could not find email field")
-                return False
-            
-            self.smart_delay()
-            
-            # Fill password field
-            password_selector = f"input[name='{password_field_name}']"
-            try:
-                password_field = self.driver.find_element(By.CSS_SELECTOR, password_selector)
-                password_field.clear()
-                password_field.send_keys(CONFIG['password'])  # Use configurable password
-                self.logger.info("✅ LOGIN: Password entered")
-            except:
-                self.logger.error(f"❌ LOGIN: Could not find password field with selector: {password_selector}")
-                return False
-            
-            self.smart_delay()
-            
-            # Click login button
-            login_selectors = [
-                "button[type='submit']",
-                "input[type='submit']",
-                "button",
-                "input[value*='Login']",
-                "input[value*='Sign']"
-            ]
-            
-            login_clicked = False
-            for selector in login_selectors:
-                try:
-                    login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if login_btn.is_displayed() and login_btn.is_enabled():
-                        login_btn.click()
-                        self.logger.info("✅ LOGIN: Login button clicked")
-                        login_clicked = True
-                        break
-                except:
-                    continue
-            
-            if not login_clicked:
-                try:
-                    form_element = self.driver.find_element(By.CSS_SELECTOR, "form[name='login']")
-                    form_element.submit()
-                    self.logger.info("✅ LOGIN: Form submitted")
-                    login_clicked = True
-                except:
-                    pass
-            
-            self.smart_delay()
-            time.sleep(8)
-            
-            # Check login success
-            self.driver.get("https://adsha.re/surf")
-            self.smart_delay()
-            
-            current_url = self.driver.current_url
-            if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("✅ LOGIN: Successful!")
-                self.state['is_logged_in'] = True
-                self.save_cookies()
-                self.send_telegram("✅ <b>Login Successful!</b>")
-                return True
-            else:
-                if "login" in current_url:
-                    self.logger.error("❌ LOGIN: Failed - still on login page")
-                    return False
-                else:
-                    self.logger.warning("⚠️ LOGIN: May need manual verification, but continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
-                
-        except Exception as e:
-            self.logger.error(f"❌ LOGIN: Error - {e}")
+        else:
+            self.state['is_logged_in'] = False
+            self.state['session_valid'] = False
+            self.save_session_status()
+            self.logger.error("❌ Login failed")
             return False
 
     def navigate_to_adshare(self):
-        """Navigate to AdShare with browser health check"""
-        if not self.is_browser_alive():
-            self.logger.error("❌ Browser dead during navigation")
-            return False
-            
+        """Navigate with smart session handling"""
         self.logger.info("🌐 Navigating to AdShare...")
         
         try:
@@ -604,52 +406,145 @@ class FirefoxSymbolGameSolver:
             
             self.smart_delay()
             
-            if self.check_login_status():
-                self.logger.info("✅ Already logged in!")
-                return True
+            # Check if we need login
+            if not self.state['is_logged_in'] or not self.validate_session():
+                return self.smart_login_flow()
             else:
-                self.logger.info("🔐 Login required...")
-                return self.force_login()
+                self.logger.info("✅ Already logged in with valid session!")
+                return True
                 
         except Exception as e:
             self.logger.error(f"❌ Navigation failed: {e}")
             return False
 
-    # ... (keep all other methods: simple_click, calculate_similarity, compare_symbols, find_best_match, extract_credits, etc.)
+    # ==================== GAME SOLVING METHODS ====================
+    def smart_delay(self):
+        """Randomized delay between actions"""
+        if CONFIG['random_delay']:
+            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
+        else:
+            delay = CONFIG['base_delay']
+        time.sleep(delay)
+        return delay
+
+    def simple_click(self, element):
+        """Click element with error handling"""
+        try:
+            self.smart_delay()
+            element.click()
+            self.logger.info("✅ Element clicked")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Click failed: {e}")
+            return False
+
+    def calculate_similarity(self, str1, str2):
+        """Calculate string similarity"""
+        if len(str1) == 0 or len(str2) == 0:
+            return 0.0
+        common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
+        max_len = max(len(str1), len(str2))
+        return common_chars / max_len if max_len > 0 else 0.0
+
+    def compare_symbols(self, question_svg, answer_svg):
+        """Compare SVG symbols for matching"""
+        try:
+            question_content = question_svg.get_attribute('innerHTML')
+            answer_content = answer_svg.get_attribute('innerHTML')
+            
+            if not question_content or not answer_content:
+                return {'match': False, 'confidence': 0.0, 'exact': False}
+            
+            def clean_svg(svg_text):
+                cleaned = re.sub(r'\s+', ' ', svg_text).strip().lower()
+                cleaned = re.sub(r'fill:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'stroke:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'style="[^"]*"', '', cleaned)
+                cleaned = re.sub(r'class="[^"]*"', '', cleaned)
+                return cleaned
+            
+            clean_question = clean_svg(question_content)
+            clean_answer = clean_svg(answer_content)
+            
+            if clean_question == clean_answer:
+                return {'match': True, 'confidence': 1.0, 'exact': True}
+            
+            similarity = self.calculate_similarity(clean_question, clean_answer)
+            should_match = similarity >= 0.90
+            
+            return {'match': should_match, 'confidence': similarity, 'exact': False}
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Symbol comparison error: {e}")
+            return {'match': False, 'confidence': 0.0, 'exact': False}
+
+    def find_best_match(self, question_svg, links):
+        """Find best matching symbol"""
+        best_match = None
+        highest_confidence = 0
+        exact_matches = []
+        
+        for link in links:
+            try:
+                answer_svg = link.find_element(By.TAG_NAME, "svg")
+                if answer_svg:
+                    comparison = self.compare_symbols(question_svg, answer_svg)
+                    
+                    if comparison['exact'] and comparison['match']:
+                        exact_matches.append({
+                            'link': link,
+                            'confidence': comparison['confidence'],
+                            'exact': True
+                        })
+                    
+                    elif comparison['match'] and comparison['confidence'] > highest_confidence:
+                        highest_confidence = comparison['confidence']
+                        best_match = {
+                            'link': link,
+                            'confidence': comparison['confidence'],
+                            'exact': False
+                        }
+            except:
+                continue
+        
+        if exact_matches:
+            return exact_matches[0]
+        
+        if best_match and best_match['confidence'] >= 0.90:
+            return best_match
+        
+        return None
 
     def solve_symbol_game(self):
-        """Main game solving logic with browser health checks"""
-        if not self.state['is_running']:
+        """Main game solving logic"""
+        if not self.state['is_running'] or not self.is_browser_alive():
             return False
         
-        if not self.is_browser_alive():
-            self.logger.error("❌ Browser dead during game solving")
-            return False
-            
         try:
-            if not self.ensure_correct_page():
-                self.logger.warning("⚠️ Not on correct page, redirecting...")
-                if not self.navigate_to_adshare():
-                    return False
+            # Ensure we're on correct page
+            self.driver.get("https://adsha.re/surf")
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
             
+            # Wait for question SVG
             question_svg = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "svg"))
             )
             
-            if not question_svg:
-                self.logger.info("⏳ Waiting for game to load...")
-                return False
-            
+            # Find answer options
             links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option")
             
+            # Find best match
             best_match = self.find_best_match(question_svg, links)
             
             if best_match:
                 if self.simple_click(best_match['link']):
                     self.state['total_solved'] += 1
                     self.state['consecutive_fails'] = 0
+                    self.save_session_status()
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
-                    self.logger.info(f"✅ {match_type} Match! Confidence: {best_match['confidence']*100:.1f}% | Total: {self.state['total_solved']}")
+                    self.logger.info(f"✅ {match_type} Match! Total: {self.state['total_solved']}")
                     return True
             else:
                 self.logger.info("🔍 No good match found")
@@ -665,9 +560,214 @@ class FirefoxSymbolGameSolver:
             self.handle_consecutive_failures()
             return False
 
+    # ==================== ERROR HANDLING ====================
+    def handle_consecutive_failures(self):
+        """Handle consecutive failures with configurable limits"""
+        self.state['consecutive_fails'] += 1
+        current_fails = self.state['consecutive_fails']
+        
+        self.logger.warning(f"⚠️ Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
+        
+        if not self.is_browser_alive():
+            return
+        
+        # Level 1: Screenshot on first failure
+        if current_fails == 1 and CONFIG['send_screenshot_on_error']:
+            cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
+            if cooldown_passed:
+                self.logger.info("📸 Sending error screenshot...")
+                screenshot_result = self.send_screenshot("❌ Game Error - No game solved")
+                self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
+                self.state['last_error_screenshot'] = time.time()
+        
+        # Level 2: Refresh page
+        elif current_fails >= CONFIG['refresh_page_after_failures']:
+            self.logger.warning("🔄 Too many failures! Refreshing page...")
+            self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
+            
+            try:
+                self.driver.get("https://adsha.re/surf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                self.smart_delay()
+                self.logger.info("✅ Page refreshed")
+                self.state['consecutive_fails'] = 0
+            except Exception as e:
+                self.logger.error(f"❌ Page refresh failed: {e}")
+        
+        # Level 3: Stop solver
+        elif current_fails >= CONFIG['max_consecutive_failures']:
+            self.logger.error("🚨 CRITICAL: Too many failures! Stopping...")
+            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
+            self.stop()
+
+    # ==================== LOGIN METHOD ====================
+    def force_login(self):
+        """Login when session is invalid"""
+        try:
+            self.logger.info("🔐 FORCE LOGIN: Starting login process...")
+            
+            self.driver.get("https://adsha.re/login")
+            WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            
+            self.smart_delay()
+            
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            form = soup.find('form', {'name': 'login'})
+            if not form:
+                self.logger.error("❌ LOGIN: No login form found")
+                return False
+            
+            # Find password field dynamically
+            password_field_name = None
+            for field in form.find_all('input'):
+                field_name = field.get('name', '')
+                field_value = field.get('value', '')
+                if field_value == 'Password' and field_name != 'mail' and field_name:
+                    password_field_name = field_name
+                    break
+            
+            if not password_field_name:
+                self.logger.error("❌ LOGIN: No password field found")
+                return False
+            
+            # Fill email
+            email_selectors = ["input[name='mail']", "input[type='email']"]
+            email_filled = False
+            for selector in email_selectors:
+                try:
+                    email_field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    email_field.clear()
+                    email_field.send_keys(CONFIG['email'])
+                    self.logger.info("✅ Email entered")
+                    email_filled = True
+                    break
+                except:
+                    continue
+            
+            if not email_filled:
+                return False
+            
+            self.smart_delay()
+            
+            # Fill password
+            password_selector = f"input[name='{password_field_name}']"
+            try:
+                password_field = self.driver.find_element(By.CSS_SELECTOR, password_selector)
+                password_field.clear()
+                password_field.send_keys(CONFIG['password'])
+                self.logger.info("✅ Password entered")
+            except:
+                return False
+            
+            self.smart_delay()
+            
+            # Click login
+            login_selectors = ["button[type='submit']", "input[type='submit']", "button"]
+            for selector in login_selectors:
+                try:
+                    login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if login_btn.is_displayed() and login_btn.is_enabled():
+                        login_btn.click()
+                        self.logger.info("✅ Login button clicked")
+                        break
+                except:
+                    continue
+            
+            self.smart_delay()
+            time.sleep(8)
+            
+            # Verify login
+            self.driver.get("https://adsha.re/surf")
+            self.smart_delay()
+            
+            if "surf" in self.driver.current_url:
+                self.logger.info("✅ Login successful!")
+                return True
+            else:
+                self.logger.error("❌ Login failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Login error: {e}")
+            return False
+
+    # ==================== CREDIT SYSTEM ====================
+    def extract_credits(self):
+        """Extract credit balance from page"""
+        if not self.is_browser_alive():
+            return "BROWSER_DEAD"
+        
+        try:
+            self.driver.refresh()
+            time.sleep(5)
+            page_source = self.driver.page_source
+            
+            credit_patterns = [
+                r'(\d{1,3}(?:,\d{3})*)\s*Credits',
+                r'Credits.*?(\d{1,3}(?:,\d{3})*)',
+                r'>\s*(\d[\d,]*)\s*Credits<',
+            ]
+            
+            for pattern in credit_patterns:
+                matches = re.findall(pattern, page_source, re.IGNORECASE)
+                if matches:
+                    return f"{matches[0]} Credits"
+            
+            return "CREDITS_NOT_FOUND"
+            
+        except Exception as e:
+            return f"ERROR: {str(e)}"
+
+    def send_credit_report(self):
+        """Send credit report to Telegram"""
+        credits = self.extract_credits() if self.is_browser_alive() else "BROWSER_DEAD"
+        self.state['last_credits'] = credits
+        
+        message = f"""
+💰 <b>Credit Report</b>
+⏰ {time.strftime('%Y-%m-%d %H:%M:%S')}
+💎 {credits}
+🎯 Games Solved: {self.state['total_solved']}
+🔄 Status: {self.state['status']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🚨 Crashes: {self.state['browser_crashes']}
+        """
+        
+        self.send_telegram(message)
+        self.logger.info(f"📊 Credit report sent: {credits}")
+
+    def monitoring_loop(self):
+        """Background credit monitoring"""
+        self.logger.info("📊 Starting credit monitoring...")
+        self.state['monitoring_active'] = True
+        
+        while self.state['monitoring_active']:
+            try:
+                if self.state['is_running']:
+                    self.send_credit_report()
+                
+                for _ in range(CONFIG['credit_check_interval']):
+                    if not self.state['monitoring_active']:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Monitoring error: {e}")
+                time.sleep(60)
+        
+        self.logger.info("📊 Credit monitoring stopped")
+
+    # ==================== MAIN SOLVER LOOP ====================
     def solver_loop(self):
-        """Main solving loop with crash recovery"""
-        self.logger.info("🎮 Starting solver loop with crash recovery...")
+        """Main solving loop with all features"""
+        self.logger.info("🎮 Starting solver loop with all features...")
         self.state['status'] = 'running'
         
         # Start heartbeat monitor
@@ -677,7 +777,7 @@ class FirefoxSymbolGameSolver:
         
         if not self.driver:
             if not self.setup_firefox():
-                self.logger.error("❌ Cannot start - Firefox setup failed")
+                self.logger.error("❌ Firefox setup failed")
                 self.stop()
                 return
         
@@ -689,13 +789,12 @@ class FirefoxSymbolGameSolver:
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
                 # Refresh periodically
-                if cycle_count % 30 == 0 and cycle_count > 0:
-                    if self.is_browser_alive():
-                        self.driver.refresh()
-                        self.logger.info("🔁 Page refreshed")
-                        time.sleep(5)
+                if cycle_count % 30 == 0 and cycle_count > 0 and self.is_browser_alive():
+                    self.driver.refresh()
+                    self.logger.info("🔁 Page refreshed")
+                    time.sleep(5)
                 
-                # Try to solve game
+                # Solve game
                 game_solved = self.solve_symbol_game()
                 
                 if game_solved:
@@ -713,12 +812,12 @@ class FirefoxSymbolGameSolver:
             self.logger.error("🚨 Too many failures, stopping...")
             self.stop()
 
+    # ==================== CONTROL METHODS ====================
     def start(self):
-        """Start the solver with proper cleanup"""
+        """Start solver with session preservation"""
         if self.state['is_running']:
-            return "❌ Solver is already running"
+            return "❌ Solver already running"
         
-        # Force cleanup of any previous session
         self.force_cleanup()
         
         self.state['is_running'] = True
@@ -736,52 +835,41 @@ class FirefoxSymbolGameSolver:
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("🚀 Solver started with crash recovery!")
-        config_summary = f"""
-📋 <b>Configuration Summary</b>
-🦊 Memory Optimization: {'✅' if CONFIG['enable_memory_optimization'] else '❌'}
-🔄 Auto-Restart: {'✅' if CONFIG['auto_restart_on_crash'] else '❌'}
-📸 Error Screenshots: {'✅' if CONFIG['send_screenshot_on_error'] else '❌'}
-❤️ Heartbeat: Every {CONFIG['browser_heartbeat_interval']}s
-        """
-        self.send_telegram("🚀 <b>Solver Started with Crash Recovery!</b>" + config_summary)
+        self.logger.info("🚀 Solver started with all features!")
+        self.send_telegram("🚀 <b>Solver Started!</b>\nSmart session management active")
         return "✅ Solver started successfully!"
 
     def force_cleanup(self):
-        """Force cleanup any previous browser sessions"""
-        self.logger.info("🧹 Force cleaning up previous sessions...")
+        """Force cleanup before start"""
+        self.logger.info("🧹 Force cleanup...")
         try:
             if self.driver:
                 self.driver.quit()
-                self.driver = None
         except:
             pass
-        
-        # Kill any orphaned geckodriver processes
         try:
             subprocess.run(['pkill', '-f', 'geckodriver'], timeout=10)
         except:
             pass
 
     def stop(self):
-        """Stop the solver with proper cleanup"""
+        """Stop solver with session save"""
         self.state['is_running'] = False
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
-        # Save cookies if browser is alive
         if self.is_browser_alive():
             self.save_cookies()
         
-        # Force cleanup
         self.force_cleanup()
+        self.save_session_status()
         
-        self.logger.info("🛑 Solver stopped with cleanup")
-        self.send_telegram("🛑 <b>Solver Stopped with Cleanup!</b>")
+        self.logger.info("🛑 Solver stopped with session saved")
+        self.send_telegram("🛑 <b>Solver Stopped!</b>\nSession saved for next start")
         return "✅ Solver stopped successfully!"
 
     def status(self):
-        """Get status with crash recovery info"""
+        """Get comprehensive status"""
         return f"""
 📊 <b>Status Report</b>
 ⏰ {time.strftime('%Y-%m-%d %H:%M:%S')}
@@ -789,55 +877,13 @@ class FirefoxSymbolGameSolver:
 🎯 Games Solved: {self.state['total_solved']}
 💰 Last Credits: {self.state['last_credits']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Consecutive Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
-🚨 Browser Crashes: {self.state['browser_crashes']}
+💾 Session Valid: {'✅' if self.state['session_valid'] else '❌'}
+⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🚨 Crashes: {self.state['browser_crashes']}
 ❤️ Last Heartbeat: {time.strftime('%H:%M:%S', time.localtime(self.state['last_heartbeat']))}
         """
 
-    def monitoring_loop(self):
-        """Background credit monitoring"""
-        self.logger.info("📊 Starting credit monitoring...")
-        self.state['monitoring_active'] = True
-        
-        while self.state['monitoring_active']:
-            try:
-                if self.state['is_running'] and self.is_browser_alive():
-                    self.send_credit_report()
-                
-                for _ in range(CONFIG['credit_check_interval']):
-                    if not self.state['monitoring_active']:
-                        break
-                    time.sleep(1)
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Monitoring error: {e}")
-                time.sleep(60)
-        
-        self.logger.info("📊 Credit monitoring stopped")
-
-    def send_credit_report(self):
-        """Send credit report to Telegram"""
-        if not self.is_browser_alive():
-            self.state['last_credits'] = "BROWSER_DEAD"
-        else:
-            credits = self.extract_credits()
-            self.state['last_credits'] = credits
-        
-        message = f"""
-💰 <b>Credit Report</b>
-⏰ {time.strftime('%Y-%m-%d %H:%M:%S')}
-💎 {self.state['last_credits']}
-🎯 Games Solved: {self.state['total_solved']}
-🔄 Status: {self.state['status']}
-🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Consecutive Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
-🚨 Browser Crashes: {self.state['browser_crashes']}
-        """
-        
-        self.send_telegram(message)
-        self.logger.info(f"📊 Credit report: {self.state['last_credits']}")
-
-# Telegram Bot (keep the same)
+# Telegram Bot (same as before)
 class TelegramBot:
     def __init__(self):
         self.solver = FirefoxSymbolGameSolver()
@@ -891,21 +937,21 @@ class TelegramBot:
         elif text.startswith('/screenshot'):
             response = self.solver.send_screenshot()
         elif text.startswith('/help'):
-            response = f"""
+            response = """
 🤖 <b>AdShare Solver Commands</b>
 
-/start - Start solver
-/stop - Stop solver  
+/start - Start solver (reuses session)
+/stop - Stop solver (saves session)  
 /status - Check status
 /credits - Get credits
-/screenshot - Get real-time screenshot
+/screenshot - Get screenshot
 /help - Show help
 
-💡 <b>Crash Recovery Features:</b>
-❤️ Heartbeat: Every {CONFIG['browser_heartbeat_interval']}s
-🔄 Auto-restart: {CONFIG['max_restarts_per_hour']}x/hour
-📸 Error screenshots: {'✅' if CONFIG['send_screenshot_on_error'] else '❌'}
-🛑 Stop after: {CONFIG['max_consecutive_failures']} failures
+💡 <b>Smart Features:</b>
+🔐 Session reuse - No repeated logins
+❤️ Crash recovery - Auto-restart
+📸 Error screenshots
+🔄 Smart failure handling
             """
         
         if response:
@@ -913,5 +959,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("🤖 AdShare Solver with Crash Recovery started!")
+    bot.logger.info("🤖 AdShare Solver with ALL FEATURES started!")
     bot.handle_updates()
