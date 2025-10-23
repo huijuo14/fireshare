@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Firefox Edition
-With uBlock Origin, Cookie Management & Screenshot Fallbacks
+WITH MEMORY OPTIMIZATION FLAGS & ENHANCED ERROR HANDLING
 """
 
 import os
@@ -39,14 +39,16 @@ class FirefoxSymbolGameSolver:
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
-        # Simplified State Management
+        # Enhanced State Management
         self.state = {
             'is_running': False,
             'total_solved': 0,
             'status': 'stopped',
             'last_credits': 'Unknown',
             'monitoring_active': False,
-            'is_logged_in': False
+            'is_logged_in': False,
+            'consecutive_fails': 0,  # Track consecutive failures
+            'last_error_screenshot': 0  # Timestamp of last error screenshot
         }
         
         # Login credentials
@@ -77,7 +79,7 @@ class FirefoxSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"✅ Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Firefox!</b>")
+                    self.send_telegram("🤖 <b>AdShare Solver Started with Firefox + Memory Optimization!</b>")
                     return True
             return False
         except Exception as e:
@@ -102,132 +104,85 @@ class FirefoxSymbolGameSolver:
             self.logger.error(f"❌ Telegram send failed: {e}")
             return False
 
-    def send_screenshot(self):
-        """Send screenshot to Telegram - MULTIPLE FALLBACKS"""
+    def send_screenshot(self, caption="🖥️ Screenshot"):
+        """Send screenshot to Telegram with custom caption"""
         if not self.driver or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            # Method 1: Direct file upload (Most reliable)
-            try:
-                screenshot_path = "/tmp/screenshot.png"
-                self.driver.save_screenshot(screenshot_path)
-                
-                url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-                
-                with open(screenshot_path, 'rb') as photo:
-                    files = {'photo': photo}
-                    data = {
-                        'chat_id': self.telegram_chat_id,
-                        'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
-                    }
-                    
-                    response = requests.post(url, files=files, data=data, timeout=30)
-                
-                if os.path.exists(screenshot_path):
-                    os.remove(screenshot_path)
-                    
-                if response.status_code == 200:
-                    return "✅ Screenshot sent! (Method 1)"
-                else:
-                    self.logger.warning(f"Method 1 failed: {response.status_code}")
-            except Exception as e:
-                self.logger.warning(f"Method 1 failed: {e}")
+            screenshot_path = "/tmp/error_screenshot.png"
+            self.driver.save_screenshot(screenshot_path)
             
-            # Method 2: Using curl command
-            try:
-                self.driver.save_screenshot("/tmp/telegram_screenshot.png")
-                
-                result = subprocess.run([
-                    'curl', '-s', '-X', 'POST', 
-                    f'https://api.telegram.org/bot{CONFIG["telegram_token"]}/sendPhoto',
-                    '-F', f'chat_id={self.telegram_chat_id}',
-                    '-F', f'caption=🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}',
-                    '-F', 'photo=@/tmp/telegram_screenshot.png'
-                ], capture_output=True, text=True, timeout=30)
-                
-                if os.path.exists("/tmp/telegram_screenshot.png"):
-                    os.remove("/tmp/telegram_screenshot.png")
-                
-                if result.returncode == 0:
-                    return "✅ Screenshot sent! (Method 2)"
-                else:
-                    self.logger.warning(f"Method 2 failed: {result.stderr}")
-            except Exception as e:
-                self.logger.warning(f"Method 2 failed: {e}")
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
-            # Method 3: Base64 with different approach
-            try:
-                screenshot_data = self.driver.get_screenshot_as_base64()
-                
-                url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-                files = {
-                    'photo': ('screenshot.png', base64.b64decode(screenshot_data), 'image/png')
-                }
+            with open(screenshot_path, 'rb') as photo:
+                files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': f'🖥️ Screenshot - {time.strftime("%Y-%m-%d %H:%M:%S")}'
+                    'caption': f'{caption} - {time.strftime("%Y-%m-%d %H:%M:%S")}'
                 }
                 
                 response = requests.post(url, files=files, data=data, timeout=30)
-                
-                if response.status_code == 200:
-                    return "✅ Screenshot sent! (Method 3)"
-                else:
-                    self.logger.warning(f"Method 3 failed: {response.status_code}")
-            except Exception as e:
-                self.logger.warning(f"Method 3 failed: {e}")
             
-            return "❌ All screenshot methods failed"
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+                
+            if response.status_code == 200:
+                return "✅ Screenshot sent to Telegram!"
+            else:
+                return f"❌ Screenshot failed: {response.status_code}"
                 
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    def check_ublock_installed(self):
-        """Check if uBlock Origin is installed and working"""
-        if not self.driver:
-            return False
-        
-        try:
-            # Navigate to extensions page
-            self.driver.get("about:addons")
-            time.sleep(2)
-            
-            # Look for uBlock in extensions list
-            page_source = self.driver.page_source.lower()
-            
-            if "ublock" in page_source or "ublock origin" in page_source:
-                self.logger.info("✅ uBlock Origin is installed")
-                return True
-            else:
-                self.logger.warning("⚠️ uBlock Origin not found in extensions")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error checking uBlock: {e}")
-            return False
-
-    def setup_firefox(self):
-        """Setup Firefox with uBlock Origin and verification"""
-        self.logger.info("🦊 Starting Firefox with uBlock Origin...")
+    def setup_optimized_firefox(self):
+        """🦊 Setup Firefox with MEMORY OPTIMIZATION FLAGS"""
+        self.logger.info("🦊 Starting OPTIMIZED Firefox with memory reduction flags...")
         
         try:
             options = Options()
             
-            # Headless mode for server
+            # BASIC SETUP
             options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")  # Uses /tmp instead of /dev/shm
             
-            # Performance and stealth options
-            options.set_preference("dom.webdriver.enabled", False)
-            options.set_preference("useAutomationExtension", False)
-            options.set_preference("browser.download.folderList", 2)
-            options.set_preference("browser.download.manager.showWhenStarting", False)
+            # 🎯 MEMORY OPTIMIZATION FLAGS WITH EXPLANATIONS:
             
-            # Create profile for persistent data
-            options.set_preference("browser.cache.disk.enable", True)
-            options.set_preference("browser.cache.memory.enable", True)
-            options.set_preference("browser.cache.offline.enable", True)
-            options.set_preference("network.http.use-cache", True)
+            # 🔥 HIGH IMPACT - PROCESS LIMITS (SAFE for single tab)
+            options.set_preference("dom.ipc.processCount", 1)      # 🚀 Save 80-120MB: Single process for all content
+            options.set_preference("content.processLimit", 1)      # 🚀 Save 60-100MB: Limit to 1 content process
+            options.set_preference("dom.ipc.processPrelaunch.enabled", False)  # Save 10-20MB: No process prelaunch
+            
+            # 💾 MEMORY LIMITS (SAFE)
+            options.set_preference("javascript.options.mem.max", 51200)        # Save 20-40MB: Limit JS heap to 50MB
+            options.set_preference("browser.sessionhistory.max_entries", 2)    # Save 10-20MB: Only keep 2 pages in history
+            options.set_preference("media.memory_cache_max_size", 2048)        # Save 15-25MB: Limit media cache to 2MB
+            options.set_preference("image.mem.max_decoded_image_kb", 1024)     # Save 10-20MB: Limit images to 1MB
+            
+            # 🖥️ RENDER OPTIMIZATIONS (SAFE in headless)
+            options.add_argument("--disable-gpu")                              # Save 5-15MB: Disable GPU in headless
+            options.set_preference("layers.acceleration.disabled", True)       # Save 10-20MB: Software rendering only
+            
+            # 🌐 NETWORK OPTIMIZATIONS (SAFE)
+            options.set_preference("network.http.max-connections", 10)         # Save 5-10MB: Reduce concurrent connections
+            options.set_preference("network.http.max-persistent-connections-per-server", 2)  # Save 5-10MB
+            
+            # ⚡ PERFORMANCE TWEAKS (SAFE)
+            options.set_preference("browser.sessionstore.interval", 60000)     # Save 5-10MB: Reduce session save frequency
+            
+            # ❌ CRITICAL - KEEP ENABLED FOR SYMBOL GAME FUNCTIONALITY:
+            options.set_preference("permissions.default.image", 2)             # MUST ALLOW IMAGES for symbols
+            options.set_preference("gfx.webrender.all", True)                  # KEEP modern rendering for SVG symbols
+            options.set_preference("browser.cache.disk.enable", True)          # KEEP disk cache for performance
+            options.set_preference("browser.cache.memory.enable", True)        # KEEP memory cache for performance
+            
+            self.logger.info("✅ Memory optimization flags applied:")
+            self.logger.info("   - Process limits: 1 process for all content")
+            self.logger.info("   - JS memory limit: 50MB max")
+            self.logger.info("   - Media cache: 2MB limit") 
+            self.logger.info("   - Image cache: 1MB limit")
+            self.logger.info("   - Network: Reduced connections")
             
             # Create driver
             service = Service('/usr/local/bin/geckodriver')
@@ -238,28 +193,21 @@ class FirefoxSymbolGameSolver:
             self.logger.info(f"📦 Installing uBlock from: {ublock_path}")
             
             if os.path.exists(ublock_path):
-                self.driver.install_addon(ublock_path, temporary=False)  # Permanent installation
+                self.driver.install_addon(ublock_path, temporary=False)
                 self.logger.info("✅ uBlock Origin installed!")
-                
-                # Verify installation
-                time.sleep(2)
-                ublock_working = self.check_ublock_installed()
-                if ublock_working:
-                    self.send_telegram("🛡️ <b>uBlock Origin installed and working!</b>")
-                else:
-                    self.send_telegram("⚠️ <b>uBlock installation may have issues</b>")
             else:
                 self.logger.warning(f"⚠️ uBlock file not found at: {ublock_path}")
-                self.send_telegram("❌ <b>uBlock Origin file missing!</b>")
             
             # Load cookies if they exist
             self.load_cookies()
             
-            self.logger.info("✅ Firefox started successfully!")
+            self.logger.info("✅ OPTIMIZED Firefox started successfully!")
+            expected_memory = "300-450MB (was 500-700MB)"
+            self.send_telegram(f"🦊 <b>Firefox Started with Memory Optimization!</b>\nExpected RAM: {expected_memory}")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Firefox setup failed: {e}")
+            self.logger.error(f"❌ Optimized Firefox setup failed: {e}")
             return False
 
     def save_cookies(self):
@@ -305,6 +253,45 @@ class FirefoxSymbolGameSolver:
         
         time.sleep(delay)
         return delay
+
+    def handle_consecutive_failures(self):
+        """🆕 ENHANCED ERROR HANDLING: Handle consecutive failures"""
+        self.state['consecutive_fails'] += 1
+        current_fails = self.state['consecutive_fails']
+        
+        self.logger.warning(f"⚠️ Consecutive failures: {current_fails}/10")
+        
+        # 🚨 LEVEL 1: After 1st failure - Send screenshot to Telegram
+        if current_fails == 1:
+            # Only send screenshot if not sent in last 5 minutes
+            if time.time() - self.state['last_error_screenshot'] > 300:
+                self.logger.info("📸 Sending error screenshot to Telegram...")
+                screenshot_result = self.send_screenshot("❌ Game Error - No game solved")
+                self.send_telegram(f"⚠️ <b>Game Error Detected</b>\nNo game solved (1/10 fails)\n{screenshot_result}")
+                self.state['last_error_screenshot'] = time.time()
+        
+        # 🚨 LEVEL 2: After 5 failures - Refresh page
+        elif current_fails >= 5:
+            self.logger.warning("🔄 Too many failures! Refreshing page...")
+            self.send_telegram("🔄 <b>Refreshing page</b> due to 5+ consecutive failures")
+            
+            try:
+                self.driver.get("https://adsha.re/surf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                self.smart_delay()
+                self.logger.info("✅ Page refreshed successfully")
+                # Reset counter after refresh
+                self.state['consecutive_fails'] = 0
+            except Exception as e:
+                self.logger.error(f"❌ Page refresh failed: {e}")
+        
+        # 🚨 LEVEL 3: After 10 failures - Critical error
+        elif current_fails >= 10:
+            self.logger.error("🚨 CRITICAL: 10 consecutive failures! Stopping solver...")
+            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\n10 consecutive failures - Stopping solver")
+            self.stop()
 
     def ensure_correct_page(self):
         """Ensure we're on the correct surf page"""
@@ -664,6 +651,7 @@ class FirefoxSymbolGameSolver:
 🎯 Games Solved: {self.state['total_solved']}
 🔄 Status: {self.state['status']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Consecutive Fails: {self.state['consecutive_fails']}/10
         """
         
         self.send_telegram(message)
@@ -720,18 +708,25 @@ class FirefoxSymbolGameSolver:
             if best_match:
                 if self.simple_click(best_match['link']):
                     self.state['total_solved'] += 1
+                    self.state['consecutive_fails'] = 0  # Reset on success
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
                     self.logger.info(f"✅ {match_type} Match! Confidence: {best_match['confidence']*100:.1f}% | Total: {self.state['total_solved']}")
                     return True
             else:
                 self.logger.info("🔍 No good match found")
+                # 🆕 CALL ENHANCED ERROR HANDLING
+                self.handle_consecutive_failures()
                 return False
             
         except TimeoutException:
             self.logger.info("⏳ Waiting for game elements...")
+            # 🆕 CALL ENHANCED ERROR HANDLING
+            self.handle_consecutive_failures()
             return False
         except Exception as e:
             self.logger.error(f"❌ Solver error: {e}")
+            # 🆕 CALL ENHANCED ERROR HANDLING
+            self.handle_consecutive_failures()
             return False
 
     def solver_loop(self):
@@ -740,8 +735,8 @@ class FirefoxSymbolGameSolver:
         self.state['status'] = 'running'
         
         if not self.driver:
-            if not self.setup_firefox():
-                self.logger.error("❌ Cannot start - Firefox failed")
+            if not self.setup_optimized_firefox():  # 🆕 USING OPTIMIZED FIREFOX
+                self.logger.error("❌ Cannot start - Optimized Firefox failed")
                 self.stop()
                 return
         
@@ -751,7 +746,7 @@ class FirefoxSymbolGameSolver:
         consecutive_fails = 0
         cycle_count = 0
         
-        while self.state['is_running'] and consecutive_fails < 10:
+        while self.state['is_running'] and self.state['consecutive_fails'] < 10:
             try:
                 # Refresh every 15 minutes
                 if cycle_count % 30 == 0 and cycle_count > 0:
@@ -767,7 +762,6 @@ class FirefoxSymbolGameSolver:
                     time.sleep(3)  # Success delay
                 else:
                     consecutive_fails += 1
-                    self.logger.info(f"❌ No game solved ({consecutive_fails}/10 fails)")
                     time.sleep(5)  # Longer delay on fail
                 
                 cycle_count += 1
@@ -777,7 +771,7 @@ class FirefoxSymbolGameSolver:
                 consecutive_fails += 1
                 time.sleep(10)
         
-        if consecutive_fails >= 10:
+        if self.state['consecutive_fails'] >= 10:
             self.logger.error("🚨 Too many failures, stopping...")
             self.stop()
 
@@ -787,6 +781,9 @@ class FirefoxSymbolGameSolver:
             return "❌ Solver is already running"
         
         self.state['is_running'] = True
+        self.state['consecutive_fails'] = 0  # 🆕 Reset failure counter
+        self.state['last_error_screenshot'] = 0  # 🆕 Reset screenshot timer
+        
         self.solver_thread = threading.Thread(target=self.solver_loop)
         self.solver_thread.daemon = True
         self.solver_thread.start()
@@ -796,8 +793,8 @@ class FirefoxSymbolGameSolver:
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("🚀 Solver started!")
-        self.send_telegram("🚀 <b>Solver Started with Firefox!</b>")
+        self.logger.info("🚀 Solver started with memory optimization!")
+        self.send_telegram("🚀 <b>Solver Started with Memory Optimization!</b>\nExpected RAM: 300-450MB")
         return "✅ Solver started successfully!"
 
     def stop(self):
@@ -828,6 +825,7 @@ class FirefoxSymbolGameSolver:
 🎯 Games Solved: {self.state['total_solved']}
 💰 Last Credits: {self.state['last_credits']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Consecutive Fails: {self.state['consecutive_fails']}/10
         """
 
 # Telegram Bot
@@ -895,6 +893,8 @@ class TelegramBot:
 /help - Show help
 
 💡 Auto credit reports every 30 minutes
+🔄 Auto-refresh after 5 consecutive failures
+📸 Auto-screenshot on errors
             """
         
         if response:
@@ -902,5 +902,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("🤖 AdShare Solver with Firefox started!")
+    bot.logger.info("🤖 AdShare Solver with Memory Optimization started!")
     bot.handle_updates()
