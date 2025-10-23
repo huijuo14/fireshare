@@ -661,35 +661,53 @@ class FirefoxSymbolGameSolver:
                 password_field = self.driver.find_element(By.CSS_SELECTOR, password_selector)
                 password_field.clear()
                 password_field.send_keys(CONFIG['password'])
-                self.logger.info("✅ Password entered")
-            except:
-                return False
-            
-            self.smart_delay()
-            
-            # Click login
-            login_selectors = ["button[type='submit']", "input[type='submit']", "button"]
-            for selector in login_selectors:
-                try:
-                    login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if login_btn.is_displayed() and login_btn.is_enabled():
-                        login_btn.click()
-                        self.logger.info("✅ Login button clicked")
-                        break
-                except:
-                    continue
-            
-            self.smart_delay()
-            time.sleep(8)
-            
-            # Verify login
-            self.driver.get("https://adsha.re/surf")
-            self.smart_delay()
-            
-            if "surf" in self.driver.current_url:
-                self.logger.info("✅ Login successful!")
-                return True
-            else:
+self.logger.info("✅ Password entered")
+except:
+    return False
+
+self.smart_delay()
+
+# Find and click login button - ORIGINAL WORKING CODE
+login_selectors = [
+    "button[type='submit']",
+    "input[type='submit']",
+    "button", 
+    "input[value*='Login']",
+    "input[value*='Sign']"
+]
+
+login_clicked = False
+for selector in login_selectors:
+    try:
+        login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
+        if login_btn.is_displayed() and login_btn.is_enabled():
+            login_btn.click()
+            self.logger.info("✅ LOGIN: Login button clicked")
+            login_clicked = True
+            break
+    except:
+        continue
+
+if not login_clicked:
+    # Fallback: try to submit the form
+    try:
+        form_element = self.driver.find_element(By.CSS_SELECTOR, "form[name='login']")
+        form_element.submit()
+        self.logger.info("✅ LOGIN: Form submitted")
+        login_clicked = True
+    except:
+        pass
+
+self.smart_delay()
+time.sleep(8)
+
+# Verify login
+self.driver.get("https://adsha.re/surf")
+self.smart_delay()
+
+if "surf" in self.driver.current_url:
+    self.logger.info("✅ Login successful!")
+    return True
                 self.logger.error("❌ Login failed")
                 return False
                 
