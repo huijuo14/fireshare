@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - Hybrid Edition
+AdShare Symbol Game Solver - Hybrid Edition FIXED
 LOGIN WITH SELENIUM + GAME SOLVING WITH PLAYWRIGHT
 """
 
@@ -63,6 +63,7 @@ class HybridSymbolGameSolver:
         
         self.solver_thread = None
         self.monitoring_thread = None
+        self.main_loop = None
         self.setup_logging()
         self.setup_telegram()
     
@@ -117,16 +118,19 @@ class HybridSymbolGameSolver:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            screenshot_path = "/tmp/screenshot.png"
-            # Use existing loop or create new one
-            try:
-                loop = asyncio.get_event_loop()
-            except:
+            # Use the main event loop for screenshot
+            if self.main_loop and not self.main_loop.is_closed():
+                loop = self.main_loop
+            else:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
             
-            # Take screenshot
-            loop.run_until_complete(self.playwright_page.screenshot(path=screenshot_path))
+            async def take_screenshot():
+                screenshot_path = "/tmp/screenshot.png"
+                await self.playwright_page.screenshot(path=screenshot_path)
+                return screenshot_path
+            
+            screenshot_path = loop.run_until_complete(take_screenshot())
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
@@ -362,10 +366,16 @@ class HybridSymbolGameSolver:
         """Transfer session from Selenium to Playwright"""
         try:
             if not self.selenium_driver or not self.playwright_page:
+                self.logger.error("Selenium or Playwright not available")
                 return False
             
             # Get cookies from Selenium
             selenium_cookies = self.selenium_driver.get_cookies()
+            self.logger.info(f"Found {len(selenium_cookies)} cookies to transfer")
+            
+            if not selenium_cookies:
+                self.logger.error("No cookies found in Selenium")
+                return False
             
             # Convert Selenium cookies to Playwright format
             playwright_cookies = []
@@ -373,27 +383,47 @@ class HybridSymbolGameSolver:
                 playwright_cookies.append({
                     'name': cookie['name'],
                     'value': cookie['value'],
-                    'domain': cookie['domain'],
-                    'path': cookie['path'],
+                    'domain': cookie.get('domain', '.adsha.re'),
+                    'path': cookie.get('path', '/'),
                     'expires': cookie.get('expiry'),
                     'httpOnly': cookie.get('httpOnly', False),
-                    'secure': cookie.get('secure', False),
+                    'secure': cookie.get('secure', True),
                     'sameSite': cookie.get('sameSite', 'Lax')
                 })
             
-            # Apply cookies to Playwright
+            # Clear existing cookies and apply new ones
+            await self.playwright_page.context.clear_cookies()
             await self.playwright_page.context.add_cookies(playwright_cookies)
             
+            self.logger.info(f"Transferred {len(playwright_cookies)} cookies to Playwright")
+            
             # Navigate to surf page to verify session
-            await self.playwright_page.goto("https://adsha.re/surf")
+            await self.playwright_page.goto("https://adsha.re/surf", wait_until='networkidle')
             await asyncio.sleep(3)
             
             current_url = self.playwright_page.url.lower()
+            self.logger.info(f"Playwright current URL: {current_url}")
+            
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("Session transferred to Playwright successfully!")
                 return True
+            elif "login" in current_url:
+                self.logger.error("Session transfer failed - redirected to login")
+                # Try to capture why it failed
+                page_content = await self.playwright_page.content()
+                if "login" in page_content.lower():
+                    self.logger.error("Login page detected after cookie transfer")
+                return False
             else:
-                self.logger.error("Session transfer failed")
+                self.logger.warning(f"Unexpected page after transfer: {current_url}")
+                # Check if we can still see the game
+                try:
+                    svg_elements = await self.playwright_page.query_selector_all("svg")
+                    if svg_elements:
+                        self.logger.info("Found SVG elements - session might be valid")
+                        return True
+                except:
+                    pass
                 return False
                 
         except Exception as e:
@@ -403,7 +433,10 @@ class HybridSymbolGameSolver:
     def is_playwright_alive(self):
         """Check if Playwright is alive"""
         try:
-            return self.playwright_page and not self.playwright_page.is_closed()
+            return (self.playwright_page and 
+                   not self.playwright_page.is_closed() and 
+                   self.playwright_browser and 
+                   self.playwright_browser.is_connected())
         except Exception:
             return False
 
@@ -473,12 +506,18 @@ class HybridSymbolGameSolver:
                 return False
         
         # Step 3: Transfer session to Playwright
-        if not await self.transfer_session_to_playwright():
-            self.logger.error("Session transfer failed")
-            return False
+        self.logger.info("Transferring session to Playwright...")
+        transfer_attempts = 0
+        while transfer_attempts < 3:
+            if await self.transfer_session_to_playwright():
+                self.logger.info("Hybrid login successful!")
+                return True
+            transfer_attempts += 1
+            self.logger.warning(f"Session transfer failed, attempt {transfer_attempts}/3")
+            await asyncio.sleep(5)
         
-        self.logger.info("Hybrid login successful!")
-        return True
+        self.logger.error("All session transfer attempts failed")
+        return False
 
     # ==================== GAME SOLVING METHODS ====================
     def calculate_similarity(self, str1, str2):
@@ -575,13 +614,18 @@ class HybridSymbolGameSolver:
                 if not await self.ensure_correct_page_playwright():
                     return False
             
-            question_svg = await self.playwright_page.wait_for_selector("svg", timeout=10000)
+            # Wait for SVG with longer timeout
+            question_svg = await self.playwright_page.wait_for_selector("svg", timeout=15000)
             
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
             
             links = await self.playwright_page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
+            
+            if not links:
+                self.logger.info("No answer links found")
+                return False
             
             best_match = await self.find_best_match(question_svg, links)
             
@@ -628,7 +672,8 @@ class HybridSymbolGameSolver:
             self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
             
             try:
-                asyncio.run(self.playwright_page.reload())
+                if self.main_loop and not self.main_loop.is_closed():
+                    self.main_loop.run_until_complete(self.playwright_page.reload())
                 self.smart_delay()
                 self.logger.info("Page refreshed")
                 self.state['consecutive_fails'] = 0
@@ -693,9 +738,12 @@ class HybridSymbolGameSolver:
         
         while self.state['monitoring_active']:
             try:
-                if self.state['is_running']:
+                if self.state['is_running'] and self.is_playwright_alive():
                     await self.send_credit_report()
+                else:
+                    self.logger.info("Skipping credit report - solver not running")
                 
+                # Wait for next check
                 for _ in range(CONFIG['credit_check_interval']):
                     if not self.state['monitoring_active']:
                         break
@@ -772,31 +820,36 @@ class HybridSymbolGameSolver:
         self.state['consecutive_fails'] = 0
         self.state['last_error_screenshot'] = 0
         
-        # Run async loop in thread
-        def run_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Create and set main event loop
+        self.main_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.main_loop)
+        
+        # Run solver in main thread
+        def run_solver():
             try:
-                loop.run_until_complete(self.solver_loop())
+                self.main_loop.run_until_complete(self.solver_loop())
             except Exception as e:
                 self.logger.error(f"Solver loop error: {e}")
             finally:
-                loop.close()
+                if self.main_loop and not self.main_loop.is_closed():
+                    self.main_loop.close()
         
-        self.solver_thread = threading.Thread(target=run_async)
+        self.solver_thread = threading.Thread(target=run_solver)
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
+        # Start monitoring in separate thread with same loop
         if not self.state['monitoring_active']:
             def run_monitoring():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                monitoring_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(monitoring_loop)
                 try:
-                    loop.run_until_complete(self.monitoring_loop())
+                    monitoring_loop.run_until_complete(self.monitoring_loop())
                 except Exception as e:
                     self.logger.error(f"Monitoring loop error: {e}")
                 finally:
-                    loop.close()
+                    if monitoring_loop and not monitoring_loop.is_closed():
+                        monitoring_loop.close()
             
             self.monitoring_thread = threading.Thread(target=run_monitoring)
             self.monitoring_thread.daemon = True
@@ -819,22 +872,18 @@ class HybridSymbolGameSolver:
             except Exception as e:
                 self.logger.warning(f"Selenium close failed: {e}")
         
-        # Close Playwright
-        if self.playwright_browser:
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.playwright_browser.close())
-                loop.close()
-            except Exception as e:
-                self.logger.warning(f"Playwright close failed: {e}")
+        # Close Playwright properly
+        async def close_playwright():
+            if self.playwright_browser:
+                await self.playwright_browser.close()
+            if self.playwright:
+                await self.playwright.stop()
         
-        # Close playwright instance
-        if self.playwright:
-            try:
-                self.playwright.stop()
-            except Exception as e:
-                self.logger.warning(f"Playwright stop failed: {e}")
+        try:
+            if self.main_loop and not self.main_loop.is_closed():
+                self.main_loop.run_until_complete(close_playwright())
+        except Exception as e:
+            self.logger.warning(f"Playwright close failed: {e}")
         
         self.logger.info("Hybrid solver stopped")
         self.send_telegram("🛑 <b>Hybrid Solver Stopped!</b>")
@@ -904,10 +953,13 @@ class TelegramBot:
             async def get_credits():
                 return await self.solver.extract_credits()
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Use existing loop or create new one
+                try:
+                    loop = asyncio.get_event_loop()
+                except:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 credits = loop.run_until_complete(get_credits())
-                loop.close()
                 response = f"💰 <b>Credits:</b> {credits}"
             except Exception as e:
                 response = f"❌ Error getting credits: {e}"
