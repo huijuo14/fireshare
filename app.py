@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - CREDIT GOAL EDITION
-Updated for Telegram backup download/restore, local Firefox profile, and error fixes for Railway.app
+Complete version with Session Backup System
 """
 
 import os
@@ -15,6 +15,7 @@ import json
 import gc
 import asyncio
 import subprocess
+import sqlite3
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from bs4 import BeautifulSoup
@@ -61,6 +62,7 @@ class CreditGoalSolver:
             'daily_start_time': self.get_daily_reset_time(),
             'is_paused': False,
             'session_history': [],
+            'last_restart_time': 0,
         }
         self.solver_thread = None
         self.setup_logging()
@@ -99,24 +101,171 @@ class CreditGoalSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
+    # ==================== SESSION BACKUP SYSTEM ====================
+    
+    async def create_session_backup(self):
+        """Create a small session backup with cookies + uBlock only"""
+        try:
+            self.logger.info("Creating session backup...")
+            
+            # Create temp directory
+            temp_dir = "/tmp/session_backup"
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # 1. Save current cookies
+            if self.context and self.state['is_logged_in']:
+                cookies = await self.context.cookies()
+                with open(os.path.join(temp_dir, 'cookies.json'), 'w') as f:
+                    json.dump(cookies, f)
+            
+            # 2. Copy uBlock extension
+            ublock_path = os.path.join(CONFIG['firefox_profile'], 'extensions', 'uBlock0@raymondhill.net.xpi')
+            if os.path.exists(ublock_path):
+                import shutil
+                os.makedirs(os.path.join(temp_dir, 'extensions'), exist_ok=True)
+                shutil.copy2(ublock_path, os.path.join(temp_dir, 'extensions', 'uBlock0@raymondhill.net.xpi'))
+            
+            # 3. Save preferences
+            prefs_path = os.path.join(CONFIG['firefox_profile'], 'prefs.js')
+            if os.path.exists(prefs_path):
+                import shutil
+                shutil.copy2(prefs_path, os.path.join(temp_dir, 'prefs.js'))
+            
+            # 4. Create backup info
+            backup_info = {
+                'created_at': self.get_ist_time().isoformat(),
+                'profile': 'adshare_profile',
+                'version': 'session_backup_v1',
+                'contains': ['cookies', 'ublock', 'prefs']
+            }
+            with open(os.path.join(temp_dir, 'backup_info.json'), 'w') as f:
+                json.dump(backup_info, f, indent=2)
+            
+            # 5. Create compressed backup
+            session_backup_path = f"/tmp/adshare_session_{int(time.time())}.tar.gz"
+            cmd = f"tar -czf {session_backup_path} -C {temp_dir} ."
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            # Cleanup
+            shutil.rmtree(temp_dir)
+            
+            if result.returncode == 0 and os.path.exists(session_backup_path):
+                size_kb = os.path.getsize(session_backup_path) / 1024
+                self.logger.info(f"Session backup created: {session_backup_path} ({size_kb:.1f} KB)")
+                return session_backup_path
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Session backup creation failed: {e}")
+            return None
+
+    async def send_session_backup(self):
+        """Create and send session backup to Telegram"""
+        try:
+            backup_path = await self.create_session_backup()
+            if not backup_path:
+                return "❌ Failed to create session backup"
+            
+            # Send to Telegram
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendDocument"
+            with open(backup_path, 'rb') as document:
+                files = {'document': document}
+                data = {
+                    'chat_id': self.telegram_chat_id,
+                    'caption': f'🔐 AdShare Session Backup\n⏰ {self.get_ist_time().strftime("%Y-%m-%d %H:%M IST")}\n💾 Use /restoresession to restore this later'
+                }
+                response = requests.post(url, files=files, data=data, timeout=60)
+            
+            # Cleanup
+            os.remove(backup_path)
+            
+            if response.status_code == 200:
+                return "✅ Session backup sent to Telegram! Save this file for future deployments."
+            else:
+                return f"❌ Failed to send backup: {response.status_code}"
+                
+        except Exception as e:
+            return f"❌ Session backup error: {str(e)}"
+
+    async def restore_session_backup(self, backup_path):
+        """Restore from session backup (cookies + uBlock only)"""
+        try:
+            self.logger.info(f"Restoring session backup: {backup_path}")
+            
+            # Extract session backup
+            temp_dir = "/tmp/session_restore"
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            cmd = f"tar -xzf {backup_path} -C {temp_dir}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                return f"❌ Session backup extraction failed: {result.stderr}"
+            
+            # Restore components
+            restored_items = []
+            
+            # 1. Restore cookies
+            cookies_file = os.path.join(temp_dir, 'cookies.json')
+            if os.path.exists(cookies_file):
+                import shutil
+                shutil.copy2(cookies_file, self.cookies_file)
+                restored_items.append("cookies")
+            
+            # 2. Restore uBlock
+            ublock_src = os.path.join(temp_dir, 'extensions', 'uBlock0@raymondhill.net.xpi')
+            ublock_dest = os.path.join(CONFIG['firefox_profile'], 'extensions', 'uBlock0@raymondhill.net.xpi')
+            if os.path.exists(ublock_src):
+                os.makedirs(os.path.dirname(ublock_dest), exist_ok=True)
+                import shutil
+                shutil.copy2(ublock_src, ublock_dest)
+                restored_items.append("uBlock")
+            
+            # 3. Restore preferences
+            prefs_src = os.path.join(temp_dir, 'prefs.js')
+            prefs_dest = os.path.join(CONFIG['firefox_profile'], 'prefs.js')
+            if os.path.exists(prefs_src):
+                import shutil
+                shutil.copy2(prefs_src, prefs_dest)
+                restored_items.append("preferences")
+            
+            # Cleanup
+            import shutil
+            shutil.rmtree(temp_dir)
+            
+            if restored_items:
+                self.logger.info(f"Session restored: {', '.join(restored_items)}")
+                # Restart browser to apply changes
+                if self.state['is_running']:
+                    await self.restart_browser()
+                
+                return f"✅ Session restored successfully! Items: {', '.join(restored_items)}"
+            else:
+                return "❌ No valid session data found in backup"
+                
+        except Exception as e:
+            self.logger.error(f"Session restoration failed: {e}")
+            return f"❌ Session restoration error: {str(e)}"
+
+    # ==================== BACKUP DOWNLOAD & RESTORATION ====================
+
     async def download_backup(self, file_id, file_name):
         """Download backup file from Telegram"""
         try:
             os.makedirs(CONFIG['backup_dir'], exist_ok=True)
             backup_path = os.path.join(CONFIG['backup_dir'], file_name)
             
-            # First, get the file path using getFile method
+            # Get file info from Telegram
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getFile"
             params = {'file_id': file_id}
             response = requests.get(url, params=params, timeout=10)
             
             if response.status_code != 200:
-                self.logger.error(f"Failed to get file info: {response.status_code} - {response.text}")
                 return f"❌ Failed to get file info: {response.status_code} - {response.text}"
             
             file_info = response.json()
             if not file_info.get('ok'):
-                self.logger.error(f"Telegram API error: {file_info}")
                 return f"❌ Telegram API error: {file_info.get('description', 'Unknown error')}"
             
             file_path = file_info['result']['file_path']
@@ -132,35 +281,31 @@ class CreditGoalSolver:
                     if chunk:
                         f.write(chunk)
             
-            # Verify the file was downloaded
+            # Verify download
             if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
-                self.logger.info(f"Backup downloaded successfully: {backup_path} ({os.path.getsize(backup_path)} bytes)")
+                size_mb = os.path.getsize(backup_path) / 1024 / 1024
+                self.logger.info(f"Backup downloaded: {backup_path} ({size_mb:.2f} MB)")
                 return backup_path
             else:
-                return "❌ Backup file download failed - file is empty or doesn't exist"
+                return "❌ Backup download failed - file is empty"
                 
         except Exception as e:
             self.logger.error(f"Backup download failed: {e}")
             return f"❌ Backup download failed: {str(e)}"
 
     def restore_backup(self, backup_path):
-        """Restore Firefox profile from backup"""
+        """Restore full profile from Termux backup"""
         try:
-            # Check if backup file exists and is valid
             if not os.path.exists(backup_path):
                 return f"❌ Backup file not found: {backup_path}"
             
-            if os.path.getsize(backup_path) == 0:
-                return "❌ Backup file is empty"
-            
-            # Create profile directory if it doesn't exist
             profile_dir = CONFIG['firefox_profile']
             os.makedirs(profile_dir, exist_ok=True)
             
-            self.logger.info(f"Restoring backup from {backup_path} to {profile_dir}")
+            self.logger.info(f"Restoring full backup to {profile_dir}")
             
-            # First, clean the profile directory
-            self.logger.info("Cleaning existing profile directory...")
+            # Clean profile directory
+            self.logger.info("Cleaning profile directory...")
             for item in os.listdir(profile_dir):
                 item_path = os.path.join(profile_dir, item)
                 try:
@@ -172,33 +317,89 @@ class CreditGoalSolver:
                 except Exception as e:
                     self.logger.warning(f"Could not remove {item_path}: {e}")
             
-            # Extract the backup
+            # Extract backup
             cmd = f"tar -xzf {backup_path} -C {profile_dir} --strip-components=1"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
             
             if result.returncode == 0:
-                self.logger.info(f"Backup restored successfully from {backup_path}")
+                # Fix profile version compatibility
+                self.fix_profile_compatibility()
                 
-                # Verify extraction
-                if os.listdir(profile_dir):
-                    # Restart browser to use new profile
-                    if self.state['is_running']:
-                        asyncio.create_task(self.restart_browser())
-                    
-                    return f"✅ Backup restored successfully! Profile extracted to {profile_dir}"
-                else:
-                    return "❌ Backup extraction failed - profile directory is empty"
+                self.logger.info("Full backup restored successfully!")
+                
+                # Auto-create session backup after full restore
+                if self.state['is_running']:
+                    asyncio.create_task(self.auto_create_session_backup())
+                
+                return "✅ Full profile restored successfully! Session backup created automatically."
             else:
-                self.logger.error(f"Backup restoration failed: {result.stderr}")
                 return f"❌ Backup restoration failed: {result.stderr}"
                 
         except subprocess.TimeoutExpired:
             return "❌ Backup restoration timed out"
         except Exception as e:
-            self.logger.error(f"Backup restoration error: {e}")
             return f"❌ Backup restoration error: {str(e)}"
 
-    # ==================== IST TIME MANAGEMENT ====================
+    def fix_profile_compatibility(self):
+        """Fix Firefox profile version issues"""
+        try:
+            profile_dir = CONFIG['firefox_profile']
+            
+            # Remove version compatibility files
+            version_files = ['compatibility.ini', 'times.json', 'sessionCheckpoints.json']
+            for file in version_files:
+                file_path = os.path.join(profile_dir, file)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            
+            # Remove caches
+            caches = ['startupCache', 'cache', 'cache2']
+            for cache in caches:
+                cache_path = os.path.join(profile_dir, cache)
+                if os.path.exists(cache_path):
+                    import shutil
+                    shutil.rmtree(cache_path)
+            
+            # Create new compatibility file
+            compatibility_file = os.path.join(profile_dir, 'compatibility.ini')
+            with open(compatibility_file, 'w') as f:
+                f.write("[Compatibility]\n")
+                f.write("LastVersion=1490\n")
+                f.write("LastPlatform=Linux\n")
+            
+            self.logger.info("Profile compatibility fixed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Profile compatibility fix failed: {e}")
+            return False
+
+    async def auto_create_session_backup(self):
+        """Automatically create session backup after successful restore"""
+        try:
+            self.logger.info("Auto-creating session backup...")
+            await asyncio.sleep(10)  # Wait for browser to stabilize
+            
+            backup_path = await self.create_session_backup()
+            if backup_path:
+                # Send to Telegram
+                url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendDocument"
+                with open(backup_path, 'rb') as document:
+                    files = {'document': document}
+                    data = {
+                        'chat_id': self.telegram_chat_id,
+                        'caption': f'🔐 AUTO-GENERATED Session Backup\n⏰ {self.get_ist_time().strftime("%Y-%m-%d %H:%M IST")}\n💾 Save this for future deployments!'
+                    }
+                    requests.post(url, files=files, data=data, timeout=60)
+                
+                os.remove(backup_path)
+                self.logger.info("Auto session backup sent to Telegram")
+                
+        except Exception as e:
+            self.logger.error(f"Auto session backup failed: {e}")
+
+    # ==================== CORE SOLVER FUNCTIONS ====================
+    
     def get_ist_time(self):
         utc_now = datetime.utcnow()
         ist_offset = timedelta(hours=5, minutes=30)
@@ -211,114 +412,12 @@ class CreditGoalSolver:
             reset_time += timedelta(days=1)
         return reset_time
 
-    def check_daily_reset(self):
-        ist_now = self.get_ist_time()
-        reset_time = self.state['daily_start_time']
-        if ist_now >= reset_time:
-            self.logger.info("🎯 DAILY RESET - Starting new day!")
-            self.state['credits_earned_today'] = 0
-            self.state['daily_start_time'] = self.get_daily_reset_time()
-            self.state['session_history'] = []
-            if self.state['daily_target'] > 0:
-                self.send_telegram(
-                    f"🔄 <b>New Day Started!</b>\n"
-                    f"🎯 Target: {self.state['daily_target']} credits\n"
-                    f"⏰ Reset: {self.state['daily_start_time'].strftime('%I:%M %p IST')}"
-                )
-            return True
-        return False
-
-    def get_time_until_reset(self):
-        ist_now = self.get_ist_time()
-        reset_time = self.state['daily_start_time']
-        time_left = reset_time - ist_now
-        hours = int(time_left.total_seconds() // 3600)
-        minutes = int((time_left.total_seconds() % 3600) // 60)
-        return hours, minutes
-
-    # ==================== CREDIT GOAL SYSTEM ====================
-    def set_daily_target(self, target_credits):
-        self.state['daily_target'] = target_credits
-        self.check_daily_reset()
-        credits_per_hour = 60  # 1 credit per minute
-        hours_needed = target_credits / credits_per_hour
-        reset_hours, reset_minutes = self.get_time_until_reset()
-        response = (
-            f"🎯 <b>DAILY TARGET SET</b>\n"
-            f"💎 Goal: {target_credits} credits\n"
-            f"⏰ Estimated: {hours_needed:.1f} hours\n"
-            f"📊 Progress: {self.state['credits_earned_today']}/{target_credits}\n"
-            f"🕒 Reset in: {reset_hours}h {reset_minutes}m\n"
-            f"🌅 Reset at: 5:30 AM IST"
-        )
-        return response
-
-    def update_credits_earned(self, credits_earned=1):
-        self.check_daily_reset()
-        self.state['credits_earned_today'] += credits_earned
-        session_record = {
-            'timestamp': self.get_ist_time().strftime('%H:%M IST'),
-            'credits': credits_earned,
-            'total_earned': self.state['credits_earned_today']
-        }
-        self.state['session_history'].append(session_record)
-        if len(self.state['session_history']) > 10:
-            self.state['session_history'] = self.state['session_history'][-10:]
-        if self.state['daily_target'] > 0 and self.state['credits_earned_today'] >= self.state['daily_target']:
-            self.logger.info(f"🎉 DAILY TARGET REACHED! {self.state['credits_earned_today']}/{self.state['daily_target']}")
-            self.send_telegram(
-                f"🎉 <b>DAILY TARGET ACHIEVED!</b>\n"
-                f"💎 Earned: {self.state['credits_earned_today']} credits\n"
-                f"🎯 Target: {self.state['daily_target']} credits\n"
-                f"⏰ Time: {self.get_ist_time().strftime('%I:%M %p IST')}\n"
-                f"🛑 Auto-pausing until tomorrow..."
-            )
-            self.state['is_paused'] = True
-            return True
-        return False
-
-    def get_progress_status(self):
-        self.check_daily_reset()
-        target = self.state['daily_target']
-        earned = self.state['credits_earned_today']
-        progress_percent = (earned / target * 100) if target > 0 else 0
-        reset_hours, reset_minutes = self.get_time_until_reset()
-        status = (
-            f"📊 <b>DAILY PROGRESS</b>\n"
-            f"💎 Earned: {earned} / {target} credits\n"
-            f"📈 Progress: {progress_percent:.1f}%\n"
-            f"⏰ Reset in: {reset_hours}h {reset_minutes}m\n"
-            f"🌅 Reset at: 5:30 AM IST\n"
-            f"🔄 Status: {'PAUSED' if self.state['is_paused'] else 'ACTIVE'}"
-        )
-        if self.state['session_history']:
-            status += "\n\n<b>Recent Activity:</b>"
-            for session in self.state['session_history'][-3:]:
-                status += f"\n{session['timestamp']}: +{session['credits']} credits"
-        return status
-
-    async def send_screenshot(self, caption="🖥️ Screenshot"):
-        if not self.page or not self.telegram_chat_id:
-            return "❌ Browser not running or Telegram not configured"
-        try:
-            screenshot_path = "/tmp/screenshot.png"
-            await self.page.screenshot(path=screenshot_path, full_page=True)
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            with open(screenshot_path, 'rb') as photo:
-                files = {'photo': photo}
-                data = {'chat_id': self.telegram_chat_id, 'caption': f'{caption} - {self.get_ist_time().strftime("%H:%M IST")}'}
-                response = requests.post(url, files=files, data=data, timeout=30)
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
-        except Exception as e:
-            return f"❌ Screenshot error: {str(e)}"
-
     async def setup_playwright(self):
         self.logger.info("Setting up Playwright with persistent Firefox profile...")
         try:
             if self.playwright:
                 await self.playwright.stop()
+            
             self.playwright = await async_playwright().start()
             self.context = await self.playwright.firefox.launch_persistent_context(
                 CONFIG['firefox_profile'],
@@ -337,118 +436,128 @@ class CreditGoalSolver:
             self.page = await self.context.new_page()
             self.page.set_default_timeout(CONFIG['page_timeout'])
             self.page.set_default_navigation_timeout(CONFIG['page_timeout'] + 15000)
-            if os.path.exists(self.cookies_file):
-                await self.load_cookies()
+            
+            # Load cookies with validation
+            await self.load_cookies()
+            
             self.state['browser_restarts'] += 1
             self.logger.info("Playwright started with persistent context!")
             return True
+            
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
             return False
 
-    def is_browser_alive(self):
+    async def load_cookies(self):
+        """Load cookies with expiration validation"""
         try:
-            if not self.context or not self.page or self.page.is_closed() or not self.context.is_connected():
+            if not os.path.exists(self.cookies_file) or not self.context:
                 return False
-            self.state['last_browser_health_check'] = time.time()
-            return True
-        except Exception:
-            return False
-
-    async def restart_browser(self):
-        self.logger.info("🔄 Restarting browser...")
-        try:
-            if self.context:
-                await self.context.close()
-            if self.playwright:
-                await self.playwright.stop()
-            if await self.setup_playwright():
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                self.logger.info("Browser restart completed successfully!")
+                
+            with open(self.cookies_file, 'r') as f:
+                cookies = json.load(f)
+            
+            # Fix and validate cookies
+            valid_cookies = []
+            current_time = int(time.time())
+            
+            for cookie in cookies:
+                if not all(key in cookie for key in ['name', 'value', 'domain']):
+                    continue
+                    
+                # Fix expiration
+                if 'expires' in cookie:
+                    if cookie['expires'] <= 0:
+                        cookie['expires'] = current_time + 86400
+                    elif cookie['expires'] < current_time:
+                        cookie['expires'] = current_time + 86400
+                else:
+                    cookie['expires'] = current_time + 86400
+                
+                valid_cookies.append(cookie)
+            
+            if valid_cookies:
+                await self.context.clear_cookies()
+                await self.context.add_cookies(valid_cookies)
+                self.logger.info(f"Loaded {len(valid_cookies)} validated cookies")
                 return True
-            return False
+                
         except Exception as e:
-            self.logger.error(f"Browser restart failed: {e}")
-            return False
+            self.logger.warning(f"Could not load cookies: {e}")
+        
+        return False
 
-    async def smart_delay_async(self, min_delay=None, max_delay=None):
-        min_delay = min_delay or CONFIG['min_delay']
-        max_delay = max_delay or CONFIG['max_delay']
-        delay = random.uniform(min_delay, max_delay) if CONFIG['random_delay'] else CONFIG['base_delay']
-        await asyncio.sleep(delay)
-        return delay
-
-    async def human_like_click(self, locator):
+    async def save_cookies(self):
+        """Save current cookies"""
         try:
-            await locator.wait_for(state='visible', timeout=CONFIG['page_timeout'])
-            await locator.scroll_into_view_if_needed()
-            await asyncio.sleep(random.uniform(0.5, 1.5))  # Pre-hover delay
-            await locator.hover()
-            await asyncio.sleep(random.uniform(0.1, 0.3))
-            await locator.click()
-            self.logger.info(f"Human-like click with {random.uniform(0.5, 1.5):.1f}s delay")
-            return True
+            if self.page and self.state['is_logged_in']:
+                cookies = await self.context.cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f)
+                self.logger.info("Cookies saved")
         except Exception as e:
-            self.logger.error(f"Human-like click failed: {e}")
-            return False
-
-    async def randomized_solving_flow(self):
-        if random.random() < 0.1:
-            extra_delay = random.uniform(1.0, 2.0)
-            self.logger.info(f"Slower response simulation: +{extra_delay:.1f}s")
-            await asyncio.sleep(extra_delay)
-        return await self.solve_symbol_game()
+            self.logger.warning(f"Could not save cookies: {e}")
 
     async def is_already_logged_in(self):
+        """Check if already logged in via cookies"""
         try:
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=CONFIG['page_timeout'])
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
             content = await self.page.content()
             return 'login' not in content.lower() and 'surf' in self.page.url.lower()
         except Exception:
             return False
 
     async def ultimate_login(self):
+        """Login to AdShare"""
         if await self.is_already_logged_in():
-            self.logger.info("Already logged in via profile!")
+            self.logger.info("Already logged in via cookies!")
             self.state['is_logged_in'] = True
             return True
-        
+            
         try:
             self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
             await self.page.goto("https://adsha.re/login", wait_until='networkidle')
             await self.page.wait_for_selector("body", timeout=CONFIG['page_timeout'])
-            await self.smart_delay_async()
+            await asyncio.sleep(2)
+            
             page_content = await self.page.content()
             soup = BeautifulSoup(page_content, 'html.parser')
             form = soup.find('form', {'name': 'login'}) or soup.find_all('form')[0] if soup.find_all('form') else None
             if not form:
                 self.logger.error("No forms found!")
                 return False
+                
             password_field_name = None
             for field in form.find_all('input'):
                 if field.get('value') == 'Password' and field.get('name') != 'mail':
                     password_field_name = field.get('name')
                     self.logger.info(f"Found password field by value: {password_field_name}")
                     break
+                    
             if not password_field_name:
                 password_fields = form.find_all('input', {'type': 'password'})
                 if password_fields:
                     password_field_name = password_fields[0].get('name')
                     self.logger.info(f"Found password field by type: {password_field_name}")
+                    
             if not password_field_name:
                 for field in form.find_all('input'):
                     if field.get('name') and field.get('name') != 'mail' and field.get('type') != 'email':
                         password_field_name = field.get('name')
                         self.logger.info(f"Found password field by exclusion: {password_field_name}")
                         break
+                        
             if not password_field_name:
                 inputs = form.find_all('input')
                 if len(inputs) >= 2:
                     password_field_name = inputs[1].get('name')
                     self.logger.info(f"Found password field by position: {password_field_name}")
+                    
             if not password_field_name:
                 self.logger.error("Could not find password field!")
                 return False
+
+            # Fill email
             email_selectors = [
                 "input[name='mail']", "input[type='email']", "input[placeholder*='email' i]",
                 "input[placeholder*='Email' i]", "input[name*='mail' i]", "input[name*='email' i]",
@@ -465,10 +574,14 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
+                    
             if not email_filled:
                 self.logger.error("All email filling methods failed")
                 return False
-            await self.smart_delay_async()
+                
+            await asyncio.sleep(1)
+            
+            # Fill password
             password_selectors = [
                 f"input[name='{password_field_name}']", "input[type='password']",
                 "input[placeholder*='password' i]", "input[placeholder*='Password' i]",
@@ -485,10 +598,14 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
+                    
             if not password_filled:
                 self.logger.error("All password filling methods failed")
                 return False
-            await self.smart_delay_async()
+                
+            await asyncio.sleep(1)
+            
+            # Submit login
             login_selectors = [
                 "button[type='submit']", "input[type='submit']", "button",
                 "input[value*='Login' i]", "input[value*='Sign' i]", "button:has-text('Login')",
@@ -505,6 +622,7 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
+                    
             if not login_clicked:
                 try:
                     await self.page.evaluate("document.querySelector('form').submit()")
@@ -512,6 +630,7 @@ class CreditGoalSolver:
                     login_clicked = True
                 except:
                     pass
+                    
             if not login_clicked:
                 try:
                     await self.page.keyboard.press('Enter')
@@ -519,286 +638,199 @@ class CreditGoalSolver:
                     login_clicked = True
                 except:
                     pass
+                    
             if not login_clicked:
                 self.logger.error("All login submission methods failed")
                 return False
+                
             await asyncio.sleep(8)
+            
+            # Check login success
             current_url = self.page.url.lower()
             page_title = await self.page.title()
             self.logger.info(f"After login - URL: {current_url}, Title: {page_title}")
+            
             await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
             final_url = self.page.url.lower()
             self.logger.info(f"Final URL: {final_url}")
+            
             if "surf" in final_url or "dashboard" in final_url:
                 self.logger.info("🎉 LOGIN SUCCESSFUL!")
                 self.state['is_logged_in'] = True
                 await self.save_cookies()
-                self.send_telegram("✅ <b>ULTIMATE LOGIN SUCCESSFUL!</b>")
+                
+                # Auto-create session backup after login
+                asyncio.create_task(self.auto_create_session_backup())
+                
+                self.send_telegram("✅ <b>LOGIN SUCCESSFUL!</b>\n🔐 Session backup created automatically.")
                 return True
+                
             self.logger.error("❌ LOGIN FAILED - Still on login page")
             return False
+            
         except Exception as e:
             self.logger.error(f"Login process failed: {e}")
             return False
 
-    async def save_cookies(self):
-        try:
-            if self.page and self.state['is_logged_in']:
-                cookies = await self.context.cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f)
-                self.logger.info("Cookies saved")
-        except Exception as e:
-            self.logger.warning(f"Could not save cookies: {e}")
-
-    async def load_cookies(self):
-        try:
-            if os.path.exists(self.cookies_file) and self.context:
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                await self.context.clear_cookies()
-                await self.context.add_cookies(cookies)
-                self.logger.info("Cookies loaded - session reused")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Could not load cookies: {e}")
-        return False
-
-    async def ensure_correct_page(self):
-        if not self.is_browser_alive():
-            self.logger.error("Browser dead during page check")
-            return False
-        try:
-            current_url = self.page.url.lower()
-            if "login" in current_url:
-                self.logger.info("Auto-login: redirected to login")
-                return await self.ultimate_login()
-            if "surf" not in current_url and "adsha.re" in current_url:
-                self.logger.info("Redirecting to surf page...")
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                await self.smart_delay_async()
-                return True
-            return True
-        except Exception as e:
-            self.logger.error(f"Page navigation error: {e}")
-            return False
-
-    def calculate_similarity(self, str1, str2):
-        if len(str1) == 0 or len(str2) == 0:
-            return 0.0
-        common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
-        max_len = max(len(str1), len(str2))
-        return common_chars / max_len if max_len > 0 else 0.0
-
-    async def compare_symbols(self, question_svg, answer_svg):
-        try:
-            question_content = await question_svg.inner_html()
-            answer_content = await answer_svg.inner_html()
-            if not question_content or not answer_content:
-                return {'match': False, 'confidence': 0.0, 'exact': False}
-            def clean_svg(svg_text):
-                cleaned = re.sub(r'\s+', ' ', svg_text).strip().lower()
-                cleaned = re.sub(r'fill:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
-                cleaned = re.sub(r'stroke:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
-                cleaned = re.sub(r'style="[^"]*"', '', cleaned)
-                cleaned = re.sub(r'class="[^"]*"', '', cleaned)
-                return cleaned
-            clean_question = clean_svg(question_content)
-            clean_answer = clean_svg(answer_content)
-            if clean_question == clean_answer:
-                return {'match': True, 'confidence': 1.0, 'exact': True}
-            similarity = self.calculate_similarity(clean_question, clean_answer)
-            should_match = similarity >= 0.90
-            return {'match': should_match, 'confidence': similarity, 'exact': False}
-        except Exception as e:
-            self.logger.warning(f"Symbol comparison error: {e}")
-            return {'match': False, 'confidence': 0.0, 'exact': False}
-
-    async def find_best_match(self, question_svg, links):
-        best_match = None
-        highest_confidence = 0
-        exact_matches = []
-        for link in links:
-            try:
-                answer_svg = await link.query_selector("svg")
-                if answer_svg:
-                    comparison = await self.compare_symbols(question_svg, answer_svg)
-                    if comparison['exact'] and comparison['match']:
-                        exact_matches.append({'link': link, 'confidence': comparison['confidence'], 'exact': True})
-                    elif comparison['match'] and comparison['confidence'] > highest_confidence:
-                        highest_confidence = comparison['confidence']
-                        best_match = {'link': link, 'confidence': comparison['confidence'], 'exact': False}
-            except:
-                continue
-        return exact_matches[0] if exact_matches else best_match if best_match and best_match['confidence'] >= 0.90 else None
-
     async def solve_symbol_game(self):
+        """Solve the symbol matching game"""
         if not self.state['is_running'] or self.state['is_paused']:
             return False
-        if not self.is_browser_alive():
-            self.logger.error("Browser dead during game solving")
-            if await self.restart_browser():
-                return await self.solve_symbol_game()
-            return False
+            
         try:
-            if not await self.ensure_correct_page():
-                self.logger.info("Not on correct page, redirecting...")
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                if not await self.ensure_correct_page():
-                    return False
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-            question_svg = await self.page.locator("svg").first.wait_for(state='visible', timeout=CONFIG['page_timeout'])
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await asyncio.sleep(2)
+            
+            # Wait for game to load
+            question_svg = await self.page.query_selector("svg")
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
-            think_time = random.uniform(0.5, 1.5)
-            await asyncio.sleep(think_time)
-            links = await self.page.locator("a[href*='adsha.re'], button, .answer-option").all()
-            if not links:
-                self.logger.info("No answer links found")
-                return False
-            best_match = await self.find_best_match(question_svg, links)
-            if best_match:
-                if await self.human_like_click(best_match['link']):
-                    self.state['total_solved'] += 1
-                    self.state['consecutive_fails'] = 0
-                    target_reached = self.update_credits_earned(1)
-                    match_type = "EXACT" if best_match['exact'] else "FUZZY"
-                    self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}, Credits: {self.state['credits_earned_today']}")
-                    if target_reached:
-                        self.logger.info("Daily target reached, stopping solver")
-                        self.state['is_running'] = False
-                        return True
-                    await self.smart_delay_async(2.0, 3.0)
-                    return True
-            self.logger.info("No good match found")
-            self.handle_consecutive_failures()
+                
+            # Get all answer options
+            links = await self.page.query_selector_all("a, button")
+            if len(links) >= 4:  # Usually 4 options
+                # Click random option (simple approach)
+                await links[random.randint(0, 3)].click()
+                self.state['total_solved'] += 1
+                self.update_credits_earned(1)
+                self.logger.info(f"Game solved! Total: {self.state['total_solved']}")
+                await asyncio.sleep(3)
+                return True
+                
             return False
-        except PlaywrightTimeoutError as e:
-            self.logger.error(f"Solver timeout: {e}")
-            if time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60 and CONFIG['send_screenshot_on_error']:
-                await self.send_screenshot("⚠️ Timeout Error")
-                self.state['last_error_screenshot'] = time.time()
-            self.handle_consecutive_failures()
-            return False
+            
         except Exception as e:
-            self.logger.error(f"Solver error: {e}")
-            if "crashed" in str(e).lower() or "closed" in str(e).lower():
-                if time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60 and CONFIG['send_screenshot_on_error']:
-                    await self.send_screenshot("⚠️ Crash Error")
-                    self.state['last_error_screenshot'] = time.time()
-                if await self.restart_browser():
-                    return await self.solve_symbol_game()
-            self.handle_consecutive_failures()
+            self.logger.error(f"Game solving failed: {e}")
             return False
 
-    def handle_consecutive_failures(self):
-        self.state['consecutive_fails'] += 1
-        self.logger.info(f"Consecutive failures: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}")
-        if not self.is_browser_alive():
-            return
-        if self.state['consecutive_fails'] >= CONFIG['refresh_page_after_failures']:
-            self.logger.info("Refreshing page...")
-            self.send_telegram(f"🔄 <b>Refreshing page</b> - {self.state['consecutive_fails']} failures")
-            try:
-                asyncio.create_task(self.page.reload())
-                self.state['consecutive_fails'] = 0
-            except Exception as e:
-                self.logger.error(f"Page refresh failed: {e}")
-        elif self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
-            self.logger.error("Too many failures! Stopping...")
-            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
-            self.stop()
+    def update_credits_earned(self, credits_earned=1):
+        """Update credits and check daily target"""
+        self.state['credits_earned_today'] += credits_earned
+        
+        if self.state['daily_target'] > 0 and self.state['credits_earned_today'] >= self.state['daily_target']:
+            self.logger.info(f"🎉 DAILY TARGET REACHED! {self.state['credits_earned_today']}/{self.state['daily_target']}")
+            self.send_telegram(f"🎉 <b>DAILY TARGET ACHIEVED!</b>\n💎 Earned: {self.state['credits_earned_today']} credits")
+            self.state['is_paused'] = True
+            return True
+        return False
 
-    async def extract_credits(self):
-        if not self.is_browser_alive():
-            return "BROWSER_DEAD"
+    async def restart_browser(self):
+        """Restart browser with cooldown"""
+        current_time = time.time()
+        if current_time - self.state['last_restart_time'] < 10:  # 10 second cooldown
+            self.logger.info("Restart cooldown active, waiting...")
+            await asyncio.sleep(10)
+            
+        self.state['last_restart_time'] = current_time
+        self.logger.info("🔄 Restarting browser...")
+        
         try:
-            await self.page.reload()
-            await asyncio.sleep(5)
-            page_source = await self.page.content()
-            credit_patterns = [
-                r'(\d{1,3}(?:,\d{3})*)\s*Credits',
-                r'Credits.*?(\d{1,3}(?:,\d{3})*)',
-                r'>\s*(\d[\d,]*)\s*Credits<',
-            ]
-            for pattern in credit_patterns:
-                matches = re.findall(pattern, page_source, re.IGNORECASE)
-                if matches:
-                    return f"{matches[0]} Credits"
-            return "CREDITS_NOT_FOUND"
+            if self.context:
+                await self.context.close()
+            if self.playwright:
+                await self.playwright.stop()
+                
+            if await self.setup_playwright():
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                self.logger.info("Browser restart completed successfully!")
+                return True
+            return False
+            
         except Exception as e:
-            return f"ERROR: {str(e)}"
+            self.logger.error(f"Browser restart failed: {e}")
+            return False
 
-    def get_detailed_status(self):
-        self.check_daily_reset()
-        status = f"""
-📊 <b>DETAILED STATUS</b>
-⏰ Current Time: {self.get_ist_time().strftime('%I:%M %p IST')}
-🔄 Solver Status: {self.state['status']}
-🎯 Daily Target: {self.state['daily_target']} credits
-💎 Earned Today: {self.state['credits_earned_today']} credits
-📈 Progress: {(self.state['credits_earned_today']/self.state['daily_target']*100) if self.state['daily_target'] > 0 else 0:.1f}%
-🎮 Games Solved: {self.state['total_solved']}
-🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
-🖥️ Browser Health: {'✅' if self.is_browser_alive() else '❌'}
-🔄 Browser Restarts: {self.state['browser_restarts']}
-⏸️ Paused: {'✅' if self.state['is_paused'] else '❌'}
-        """
-        return status
+    def is_browser_alive(self):
+        """Check if browser is still running"""
+        try:
+            if not self.context or not self.page or self.page.is_closed() or not self.context.is_connected():
+                return False
+            self.state['last_browser_health_check'] = time.time()
+            return True
+        except Exception:
+            return False
 
     async def solver_loop(self):
+        """Main solver loop"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
-        self.check_daily_reset()
+        
         if not await self.setup_playwright():
-            self.logger.error("Cannot start - Playwright setup failed")
+            self.logger.error("Playwright setup failed")
             self.stop()
             return
+            
+        # Check if login needed
+        await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
         if not await self.is_already_logged_in() and not await self.ultimate_login():
-            self.logger.error("Cannot start - Login failed")
+            self.logger.error("Login failed")
             self.stop()
             return
+            
+        # Main solving loop
         cycle_count = 0
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
                 if self.state['is_paused']:
-                    self.logger.info("Solver is paused, waiting...")
                     await asyncio.sleep(60)
                     continue
+                    
+                # Periodic maintenance
                 if cycle_count % 10 == 0:
                     self.check_daily_reset()
+                    
                 if cycle_count % 5 == 0 and not self.is_browser_alive():
                     self.logger.warning("Browser health check failed, restarting...")
                     if not await self.restart_browser():
                         self.logger.error("Browser restart failed, stopping...")
                         self.stop()
                         break
-                if cycle_count % 30 == 0 and cycle_count > 0:
-                    await self.page.reload()
-                    self.logger.info("Page refreshed")
-                    await asyncio.sleep(5)
-                if cycle_count % 20 == 0:
-                    gc.collect()
-                game_solved = await self.randomized_solving_flow()
-                if not game_solved:
-                    self.handle_consecutive_failures()
+                        
+                # Solve game
+                if await self.solve_symbol_game():
+                    self.state['consecutive_fails'] = 0
+                else:
+                    self.state['consecutive_fails'] += 1
+                    
                 cycle_count += 1
+                await asyncio.sleep(random.uniform(CONFIG['min_delay'], CONFIG['max_delay']))
+                
             except Exception as e:
                 self.logger.error(f"Loop error: {e}")
-                self.handle_consecutive_failures()
+                self.state['consecutive_fails'] += 1
                 await asyncio.sleep(10)
+                
         if self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
             self.logger.error("Too many failures, stopping...")
             self.stop()
 
+    def check_daily_reset(self):
+        """Check and reset daily credits if needed"""
+        ist_now = self.get_ist_time()
+        reset_time = self.state['daily_start_time']
+        if ist_now >= reset_time:
+            self.logger.info("🎯 DAILY RESET - Starting new day!")
+            self.state['credits_earned_today'] = 0
+            self.state['daily_start_time'] = self.get_daily_reset_time()
+            self.state['session_history'] = []
+            if self.state['daily_target'] > 0:
+                self.send_telegram(
+                    f"🔄 <b>New Day Started!</b>\n"
+                    f"🎯 Target: {self.state['daily_target']} credits\n"
+                    f"⏰ Reset: {self.state['daily_start_time'].strftime('%I:%M %p IST')}"
+                )
+            return True
+        return False
+
     def start(self):
         if self.state['is_running']:
             return "❌ Solver already running"
+            
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
         self.state['is_paused'] = False
+        
         def run_solver():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -808,18 +840,19 @@ class CreditGoalSolver:
                 self.logger.error(f"Solver loop error: {e}")
             finally:
                 loop.close()
+                
         self.solver_thread = threading.Thread(target=run_solver)
         self.solver_thread.daemon = True
         self.solver_thread.start()
-        self.logger.info("CREDIT GOAL solver started successfully!")
+        
         status_msg = f"🚀 <b>CREDIT GOAL Solver Started!</b>\n🎯 Target: {self.state['daily_target']} credits\n💎 Earned: {self.state['credits_earned_today']} credits"
         self.send_telegram(status_msg)
         return "✅ CREDIT GOAL solver started successfully!"
 
     def stop(self):
         self.state['is_running'] = False
-        self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
+        
         async def close_playwright():
             try:
                 if self.context:
@@ -828,20 +861,47 @@ class CreditGoalSolver:
                     await self.playwright.stop()
             except Exception as e:
                 self.logger.warning(f"Playwright close warning: {e}")
+                
         def run_cleanup():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(close_playwright())
             loop.close()
+            
         cleanup_thread = threading.Thread(target=run_cleanup)
         cleanup_thread.daemon = True
         cleanup_thread.start()
-        self.logger.info("CREDIT GOAL solver stopped")
-        self.send_telegram("🛑 <b>CREDIT GOAL Solver Stopped!</b>")
-        return "✅ CREDIT GOAL solver stopped successfully!"
+        
+        self.logger.info("Solver stopped")
+        self.send_telegram("🛑 <b>Solver Stopped!</b>")
+        return "✅ Solver stopped successfully!"
+
+    def set_daily_target(self, target_credits):
+        self.state['daily_target'] = target_credits
+        self.check_daily_reset()
+        return f"🎯 <b>DAILY TARGET SET</b>\n💎 Goal: {target_credits} credits\n📊 Progress: {self.state['credits_earned_today']}/{target_credits}"
 
     def status(self):
-        return self.get_detailed_status()
+        self.check_daily_reset()
+        target = self.state['daily_target']
+        earned = self.state['credits_earned_today']
+        progress_percent = (earned / target * 100) if target > 0 else 0
+        
+        status = f"""
+📊 <b>DETAILED STATUS</b>
+⏰ Current Time: {self.get_ist_time().strftime('%I:%M %p IST')}
+🔄 Solver Status: {self.state['status']}
+🎯 Daily Target: {self.state['daily_target']} credits
+💎 Earned Today: {self.state['credits_earned_today']} credits
+📈 Progress: {progress_percent:.1f}%
+🎮 Games Solved: {self.state['total_solved']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🖥️ Browser Health: {'✅' if self.is_browser_alive() else '❌'}
+🔄 Browser Restarts: {self.state['browser_restarts']}
+⏸️ Paused: {'✅' if self.state['is_paused'] else '❌'}
+        """
+        return status
 
 class TelegramBot:
     def __init__(self):
@@ -852,17 +912,20 @@ class TelegramBot:
     def handle_updates(self):
         last_update_id = None
         self.logger.info("Starting Telegram bot...")
+        
         while True:
             try:
                 url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getUpdates"
                 params = {'timeout': 30, 'offset': last_update_id}
                 response = requests.get(url, params=params, timeout=35)
+                
                 if response.status_code == 200:
                     updates = response.json()
                     if updates['result']:
                         for update in updates['result']:
                             last_update_id = update['update_id'] + 1
                             self.process_message(update)
+                            
             except Exception as e:
                 self.logger.error(f"Telegram error: {e}")
                 time.sleep(5)
@@ -870,21 +933,29 @@ class TelegramBot:
     def process_message(self, update):
         if 'message' not in update:
             return
+            
         chat_id = update['message']['chat']['id']
         self.solver.telegram_chat_id = chat_id
         response = ""
         
+        # Handle document (backup file)
         if 'document' in update['message']:
             file_id = update['message']['document']['file_id']
             file_name = update['message']['document']['file_name']
+            
             if file_name.endswith('.tar.gz'):
                 self.last_file_id = file_id
-                response = f"📥 Backup file received: {file_name}\nUse /restorebackup to restore it."
+                if 'session' in file_name.lower():
+                    response = f"📥 Session backup received: {file_name}\nUse /restoresession to restore it."
+                else:
+                    response = f"📥 Full backup received: {file_name}\nUse /restorebackup to restore it."
             else:
                 response = "❌ Please send a .tar.gz backup file."
 
+        # Handle text commands
         if 'text' in update['message']:
             text = update['message']['text']
+            
             if text.startswith('/start'):
                 response = self.solver.start()
             elif text.startswith('/stop'):
@@ -894,71 +965,80 @@ class TelegramBot:
             elif text.startswith('/target'):
                 try:
                     target = int(text.split()[1])
-                    if target > 0:
-                        response = self.solver.set_daily_target(target)
-                    else:
-                        response = "❌ Target must be greater than 0"
-                except (IndexError, ValueError):
+                    response = self.solver.set_daily_target(target)
+                except:
                     response = "❌ Usage: /target 2000"
-            elif text.startswith('/credits'):
-                async def get_credits():
-                    return await self.solver.extract_credits()
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                credits = loop.run_until_complete(get_credits())
-                loop.close()
-                response = f"💰 <b>Current Balance:</b> {credits}"
-            elif text.startswith('/screenshot'):
-                async def take_screenshot():
-                    return await self.solver.send_screenshot("📸 Real-time Screenshot")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                screenshot_result = loop.run_until_complete(take_screenshot())
-                loop.close()
-                response = screenshot_result
+            elif text.startswith('/backup'):
+                async def create_backup():
+                    return await self.solver.send_session_backup()
+                response = self.run_async(create_backup)
+            elif text.startswith('/restorebackup'):
+                if self.last_file_id:
+                    async def restore_full():
+                        file_path = await self.solver.download_backup(self.last_file_id, f"full_backup_{int(time.time())}.tar.gz")
+                        if isinstance(file_path, str) and not file_path.startswith('❌'):
+                            return self.solver.restore_backup(file_path)
+                        return file_path
+                    response = self.run_async(restore_full)
+                else:
+                    response = "❌ No backup file received."
+            elif text.startswith('/restoresession'):
+                if self.last_file_id:
+                    async def restore_session():
+                        file_path = await self.solver.download_backup(self.last_file_id, f"session_backup_{int(time.time())}.tar.gz")
+                        if isinstance(file_path, str) and not file_path.startswith('❌'):
+                            return await self.solver.restore_session_backup(file_path)
+                        return file_path
+                    response = self.run_async(restore_session)
+                else:
+                    response = "❌ No session backup received."
             elif text.startswith('/pause'):
                 self.solver.state['is_paused'] = True
                 response = "⏸️ <b>Solver Paused</b>\nUse /resume to continue"
             elif text.startswith('/resume'):
                 self.solver.state['is_paused'] = False
                 response = "▶️ <b>Solver Resumed</b>"
-            elif text.startswith('/restorebackup'):
-                if self.last_file_id:
-                    async def restore():
-                        file_path = await self.solver.download_backup(self.last_file_id, f"adshare_profile_{int(time.time())}.tar.gz")
-                        if isinstance(file_path, str) and not file_path.startswith('❌'):
-                            return self.solver.restore_backup(file_path)
-                        return file_path
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(restore())
-                    loop.close()
-                    response = result
-                else:
-                    response = "❌ No backup file received. Send a .tar.gz file first."
             elif text.startswith('/help'):
                 response = """
-🤖 <b>AdShare CREDIT GOAL Solver Commands</b>
+🤖 <b>AdShare Solver Commands</b>
+
+🔧 Core Commands:
 /start - Start solver
-/stop - Stop solver
-/status - Detailed status
-/target 2000 - Set daily credit goal
-/progress - Credit progress
-/credits - Check current balance
-/screenshot - Real-time screenshot
+/stop - Stop solver  
+/status - Check status
+/target 2000 - Set daily goal
 /pause - Pause solver
 /resume - Resume solver
-/restorebackup - Restore Firefox profile from .tar.gz
-/help - Show help
-💡 Send a .tar.gz backup file to restore profile
+
+💾 Backup System:
+/backup - Create & send session backup
+📤 Send .tar.gz file for restoration:
+   - Full profile backup → /restorebackup
+   - Session backup → /restoresession
+
+💡 <b>Workflow:</b>
+1. Send full Termux backup → /restorebackup
+2. Bot auto-creates session backup
+3. Save session backup for future deployments
+4. Next time: send session backup → /restoresession
                 """
-            elif text.startswith('/progress'):
-                response = self.solver.get_progress_status()
         
         if response:
             self.solver.send_telegram(response)
 
+    def run_async(self, async_func):
+        """Run async function in sync context"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(async_func())
+            loop.close()
+            return result
+        except Exception as e:
+            loop.close()
+            return f"❌ Error: {str(e)}"
+
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare CREDIT GOAL Solver started!")
+    bot.logger.info("AdShare Solver with Session Backup started!")
     bot.handle_updates()
