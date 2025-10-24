@@ -139,6 +139,7 @@ class CreditGoalSolver:
             self.logger.error(f"Backup restoration error: {e}")
             return f"❌ Backup restoration error: {str(e)}"
 
+    # ==================== IST TIME MANAGEMENT ====================
     def get_ist_time(self):
         utc_now = datetime.utcnow()
         ist_offset = timedelta(hours=5, minutes=30)
@@ -176,10 +177,11 @@ class CreditGoalSolver:
         minutes = int((time_left.total_seconds() % 3600) // 60)
         return hours, minutes
 
+    # ==================== CREDIT GOAL SYSTEM ====================
     def set_daily_target(self, target_credits):
         self.state['daily_target'] = target_credits
         self.check_daily_reset()
-        credits_per_hour = 60
+        credits_per_hour = 60  # 1 credit per minute
         hours_needed = target_credits / credits_per_hour
         reset_hours, reset_minutes = self.get_time_until_reset()
         response = (
@@ -321,7 +323,7 @@ class CreditGoalSolver:
         try:
             await locator.wait_for(state='visible', timeout=CONFIG['page_timeout'])
             await locator.scroll_into_view_if_needed()
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(0.5, 1.5))  # Pre-hover delay
             await locator.hover()
             await asyncio.sleep(random.uniform(0.1, 0.3))
             await locator.click()
@@ -351,6 +353,7 @@ class CreditGoalSolver:
             self.logger.info("Already logged in via profile!")
             self.state['is_logged_in'] = True
             return True
+        
         try:
             self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
             await self.page.goto("https://adsha.re/login", wait_until='networkidle')
@@ -475,8 +478,11 @@ class CreditGoalSolver:
                 return True
             self.logger.error("❌ LOGIN FAILED - Still on login page")
             return False
+        except Exception as e:  # ADDED THIS EXCEPT BLOCK
+            self.logger.error(f"Login process failed: {e}")
+            return False
 
-    async def save_cookies(self):
+    async def save_cookies(self):  # This should be line 481
         try:
             if self.page and self.state['is_logged_in']:
                 cookies = await self.context.cookies()
