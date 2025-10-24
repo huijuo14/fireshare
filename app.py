@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - CREDIT GOAL EDITION
-Complete version with Session Backup System
+Complete version with Smart Symbol Matching + Session Backup System
 """
 
 import os
@@ -412,6 +412,27 @@ class CreditGoalSolver:
             reset_time += timedelta(days=1)
         return reset_time
 
+    async def smart_delay_async(self, min_delay=None, max_delay=None):
+        min_delay = min_delay or CONFIG['min_delay']
+        max_delay = max_delay or CONFIG['max_delay']
+        delay = random.uniform(min_delay, max_delay) if CONFIG['random_delay'] else CONFIG['base_delay']
+        await asyncio.sleep(delay)
+        return delay
+
+    async def human_like_click(self, locator):
+        try:
+            await locator.wait_for(state='visible', timeout=CONFIG['page_timeout'])
+            await locator.scroll_into_view_if_needed()
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await locator.hover()
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+            await locator.click()
+            self.logger.info(f"Human-like click with {random.uniform(0.5, 1.5):.1f}s delay")
+            return True
+        except Exception as e:
+            self.logger.error(f"Human-like click failed: {e}")
+            return False
+
     async def setup_playwright(self):
         self.logger.info("Setting up Playwright with persistent Firefox profile...")
         try:
@@ -498,71 +519,80 @@ class CreditGoalSolver:
         except Exception as e:
             self.logger.warning(f"Could not save cookies: {e}")
 
-    async def is_already_logged_in(self):
-        """Check if already logged in via cookies"""
-        try:
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            content = await self.page.content()
-            return 'login' not in content.lower() and 'surf' in self.page.url.lower()
-        except Exception:
-            return False
-
+    # ==================== ULTIMATE LOGIN (PRESERVED) ====================
     async def ultimate_login(self):
-        """Login to AdShare"""
-        if await self.is_already_logged_in():
-            self.logger.info("Already logged in via cookies!")
-            self.state['is_logged_in'] = True
-            return True
-            
+        """ULTIMATE LOGIN WITH ALL FALLBACKS"""
         try:
             self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
-            await self.page.goto("https://adsha.re/login", wait_until='networkidle')
-            await self.page.wait_for_selector("body", timeout=CONFIG['page_timeout'])
-            await asyncio.sleep(2)
+            
+            login_url = "https://adsha.re/login"
+            await self.page.goto(login_url, wait_until='networkidle')
+            await self.page.wait_for_selector("body")
+            
+            await self.smart_delay_async()
             
             page_content = await self.page.content()
             soup = BeautifulSoup(page_content, 'html.parser')
-            form = soup.find('form', {'name': 'login'}) or soup.find_all('form')[0] if soup.find_all('form') else None
+            
+            all_forms = soup.find_all('form')
+            self.logger.info(f"Found {len(all_forms)} forms")
+            
+            form = soup.find('form', {'name': 'login'})
             if not form:
-                self.logger.error("No forms found!")
+                form = all_forms[0] if all_forms else None
+            
+            if not form:
+                self.logger.error("No forms found at all!")
                 return False
-                
+            
             password_field_name = None
+            
             for field in form.find_all('input'):
-                if field.get('value') == 'Password' and field.get('name') != 'mail':
-                    password_field_name = field.get('name')
+                field_name = field.get('name', '')
+                field_value = field.get('value', '')
+                
+                if field_value == 'Password' and field_name != 'mail' and field_name:
+                    password_field_name = field_name
                     self.logger.info(f"Found password field by value: {password_field_name}")
                     break
-                    
+            
             if not password_field_name:
                 password_fields = form.find_all('input', {'type': 'password'})
                 if password_fields:
                     password_field_name = password_fields[0].get('name')
                     self.logger.info(f"Found password field by type: {password_field_name}")
-                    
+            
             if not password_field_name:
                 for field in form.find_all('input'):
-                    if field.get('name') and field.get('name') != 'mail' and field.get('type') != 'email':
-                        password_field_name = field.get('name')
+                    field_name = field.get('name', '')
+                    field_type = field.get('type', '')
+                    if field_name and field_name != 'mail' and field_type != 'email':
+                        password_field_name = field_name
                         self.logger.info(f"Found password field by exclusion: {password_field_name}")
                         break
-                        
+            
             if not password_field_name:
                 inputs = form.find_all('input')
                 if len(inputs) >= 2:
                     password_field_name = inputs[1].get('name')
                     self.logger.info(f"Found password field by position: {password_field_name}")
-                    
+            
             if not password_field_name:
-                self.logger.error("Could not find password field!")
+                self.logger.error("Could not find password field by any method")
                 return False
-
+            
             # Fill email
             email_selectors = [
-                "input[name='mail']", "input[type='email']", "input[placeholder*='email' i]",
-                "input[placeholder*='Email' i]", "input[name*='mail' i]", "input[name*='email' i]",
-                "input:first-of-type", "input:nth-of-type(1)"
+                "input[name='mail']",
+                "input[type='email']", 
+                "input[placeholder*='email' i]",
+                "input[placeholder*='Email' i]",
+                "input[name*='mail' i]",
+                "input[name*='email' i]",
+                "input:first-of-type",
+                "input:nth-of-type(1)"
             ]
+            
             email_filled = False
             for selector in email_selectors:
                 try:
@@ -574,19 +604,23 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
-                    
+            
             if not email_filled:
                 self.logger.error("All email filling methods failed")
                 return False
-                
-            await asyncio.sleep(1)
+            
+            await self.smart_delay_async()
             
             # Fill password
             password_selectors = [
-                f"input[name='{password_field_name}']", "input[type='password']",
-                "input[placeholder*='password' i]", "input[placeholder*='Password' i]",
-                "input:nth-of-type(2)", "input:last-of-type"
+                f"input[name='{password_field_name}']",
+                "input[type='password']",
+                "input[placeholder*='password' i]",
+                "input[placeholder*='Password' i]",
+                "input:nth-of-type(2)",
+                "input:last-of-type"
             ]
+            
             password_filled = False
             for selector in password_selectors:
                 try:
@@ -598,21 +632,30 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
-                    
+            
             if not password_filled:
                 self.logger.error("All password filling methods failed")
                 return False
-                
-            await asyncio.sleep(1)
             
-            # Submit login
+            await self.smart_delay_async()
+            
+            # Submit form
             login_selectors = [
-                "button[type='submit']", "input[type='submit']", "button",
-                "input[value*='Login' i]", "input[value*='Sign' i]", "button:has-text('Login')",
-                "button:has-text('Sign')", "input[value*='Log']", "input[value*='login']",
-                "form button", "form input[type='submit']"
+                "button[type='submit']",
+                "input[type='submit']", 
+                "button",
+                "input[value*='Login' i]",
+                "input[value*='Sign' i]",
+                "button:has-text('Login')",
+                "button:has-text('Sign')",
+                "input[value*='Log']",
+                "input[value*='login']",
+                "form button",
+                "form input[type='submit']"
             ]
+            
             login_clicked = False
+            
             for selector in login_selectors:
                 try:
                     if await self.page.is_visible(selector):
@@ -622,35 +665,52 @@ class CreditGoalSolver:
                         break
                 except:
                     continue
-                    
+            
             if not login_clicked:
                 try:
-                    await self.page.evaluate("document.querySelector('form').submit()")
+                    await self.page.evaluate("""() => {
+                        const form = document.querySelector("form");
+                        if (form) form.submit();
+                    }""")
                     self.logger.info("Form submitted via JavaScript")
                     login_clicked = True
                 except:
                     pass
-                    
+            
             if not login_clicked:
                 try:
+                    password_selector = f"input[name='{password_field_name}']"
+                    await self.page.click(password_selector)
                     await self.page.keyboard.press('Enter')
-                    self.logger.info("Enter key pressed")
+                    self.logger.info("Enter key pressed in password field")
                     login_clicked = True
                 except:
                     pass
-                    
+            
+            if not login_clicked:
+                try:
+                    await self.page.click('body')
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Enter key pressed on body")
+                    login_clicked = True
+                except:
+                    pass
+            
             if not login_clicked:
                 self.logger.error("All login submission methods failed")
                 return False
-                
+            
+            await self.smart_delay_async()
             await asyncio.sleep(8)
             
-            # Check login success
             current_url = self.page.url.lower()
             page_title = await self.page.title()
+            
             self.logger.info(f"After login - URL: {current_url}, Title: {page_title}")
             
             await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await self.smart_delay_async()
+            
             final_url = self.page.url.lower()
             self.logger.info(f"Final URL: {final_url}")
             
@@ -658,67 +718,270 @@ class CreditGoalSolver:
                 self.logger.info("🎉 LOGIN SUCCESSFUL!")
                 self.state['is_logged_in'] = True
                 await self.save_cookies()
-                
-                # Auto-create session backup after login
-                asyncio.create_task(self.auto_create_session_backup())
-                
-                self.send_telegram("✅ <b>LOGIN SUCCESSFUL!</b>\n🔐 Session backup created automatically.")
+                self.send_telegram("✅ <b>ULTIMATE LOGIN SUCCESSFUL!</b>")
+                return True
+            elif "login" in final_url:
+                self.logger.error("❌ LOGIN FAILED - Still on login page")
+                return False
+            else:
+                self.logger.warning("⚠️ On unexpected page, but might be logged in")
+                self.state['is_logged_in'] = True
                 return True
                 
-            self.logger.error("❌ LOGIN FAILED - Still on login page")
-            return False
-            
         except Exception as e:
-            self.logger.error(f"Login process failed: {e}")
+            self.logger.error(f"❌ ULTIMATE LOGIN ERROR: {e}")
             return False
 
-    async def solve_symbol_game(self):
-        """Solve the symbol matching game"""
-        if not self.state['is_running'] or self.state['is_paused']:
+    async def is_already_logged_in(self):
+        """Check if already logged in via cookies"""
+        try:
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            content = await self.page.content()
+            return 'login' not in content.lower() and 'surf' in self.page.url.lower()
+        except Exception:
+            return False
+
+    # ==================== GAME SOLVING (PRESERVED) ====================
+    async def ensure_correct_page(self):
+        """Ensure we're on the correct surf page"""
+        if not self.is_browser_alive():
+            self.logger.error("Browser dead during page check")
             return False
             
         try:
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            await asyncio.sleep(2)
+            current_url = self.page.url.lower()
             
-            # Wait for game to load
-            question_svg = await self.page.query_selector("svg")
+            if "login" in current_url:
+                self.logger.info("Auto-login: redirected to login")
+                return await self.ultimate_login()
+            
+            if "surf" not in current_url and "adsha.re" in current_url:
+                self.logger.info("Redirecting to surf page...")
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await self.smart_delay_async()
+                return True
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Page navigation error: {e}")
+            return False
+
+    def calculate_similarity(self, str1, str2):
+        """Calculate string similarity"""
+        if len(str1) == 0 or len(str2) == 0:
+            return 0.0
+        
+        common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
+        max_len = max(len(str1), len(str2))
+        return common_chars / max_len if max_len > 0 else 0.0
+
+    async def compare_symbols(self, question_svg, answer_svg):
+        """Compare SVG symbols"""
+        try:
+            question_content = await question_svg.inner_html()
+            answer_content = await answer_svg.inner_html()
+            
+            if not question_content or not answer_content:
+                return {'match': False, 'confidence': 0.0, 'exact': False}
+            
+            def clean_svg(svg_text):
+                cleaned = re.sub(r'\s+', ' ', svg_text).strip().lower()
+                cleaned = re.sub(r'fill:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'stroke:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'style="[^"]*"', '', cleaned)
+                cleaned = re.sub(r'class="[^"]*"', '', cleaned)
+                return cleaned
+            
+            clean_question = clean_svg(question_content)
+            clean_answer = clean_svg(answer_content)
+            
+            if clean_question == clean_answer:
+                return {'match': True, 'confidence': 1.0, 'exact': True}
+            
+            similarity = self.calculate_similarity(clean_question, clean_answer)
+            should_match = similarity >= 0.90
+            
+            return {'match': should_match, 'confidence': similarity, 'exact': False}
+            
+        except Exception as e:
+            self.logger.warning(f"Symbol comparison error: {e}")
+            return {'match': False, 'confidence': 0.0, 'exact': False}
+
+    async def find_best_match(self, question_svg, links):
+        """Find best matching symbol"""
+        best_match = None
+        highest_confidence = 0
+        exact_matches = []
+        
+        for link in links:
+            try:
+                answer_svg = await link.query_selector("svg")
+                if answer_svg:
+                    comparison = await self.compare_symbols(question_svg, answer_svg)
+                    
+                    if comparison['exact'] and comparison['match']:
+                        exact_matches.append({
+                            'link': link,
+                            'confidence': comparison['confidence'],
+                            'exact': True
+                        })
+                    
+                    elif comparison['match'] and comparison['confidence'] > highest_confidence:
+                        highest_confidence = comparison['confidence']
+                        best_match = {
+                            'link': link,
+                            'confidence': comparison['confidence'],
+                            'exact': False
+                        }
+            except:
+                continue
+        
+        if exact_matches:
+            return exact_matches[0]
+        
+        if best_match and best_match['confidence'] >= 0.90:
+            return best_match
+        
+        return None
+
+    async def solve_symbol_game(self):
+        """Main game solving logic with credit tracking"""
+        if not self.state['is_running'] or self.state['is_paused']:
+            return False
+        
+        if not self.is_browser_alive():
+            self.logger.error("Browser dead during game solving")
+            if await self.restart_browser():
+                return await self.solve_symbol_game()
+            return False
+            
+        try:
+            if not await self.ensure_correct_page():
+                self.logger.info("Not on correct page, redirecting...")
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                if not await self.ensure_correct_page():
+                    return False
+            
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            
+            question_svg = await self.page.wait_for_selector("svg", timeout=15000)
+            
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
-                
-            # Get all answer options
-            links = await self.page.query_selector_all("a, button")
-            if len(links) >= 4:  # Usually 4 options
-                # Click random option (simple approach)
-                await links[random.randint(0, 3)].click()
-                self.state['total_solved'] += 1
-                self.update_credits_earned(1)
-                self.logger.info(f"Game solved! Total: {self.state['total_solved']}")
-                await asyncio.sleep(3)
-                return True
-                
+            
+            think_time = random.uniform(0.5, 1.5)
+            await asyncio.sleep(think_time)
+            
+            links = await self.page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
+            
+            if not links:
+                self.logger.info("No answer links found")
+                return False
+            
+            best_match = await self.find_best_match(question_svg, links)
+            
+            if best_match:
+                if await self.human_like_click(best_match['link']):
+                    self.state['total_solved'] += 1
+                    self.state['consecutive_fails'] = 0
+                    
+                    # Track credits earned (1 credits per game)
+                    target_reached = self.update_credits_earned(1)
+                    
+                    match_type = "EXACT" if best_match['exact'] else "FUZZY"
+                    self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}, Credits: {self.state['credits_earned_today']}")
+                    
+                    # Stop if target reached
+                    if target_reached:
+                        self.logger.info("Daily target reached, stopping solver")
+                        self.state['is_running'] = False
+                        return True
+                    
+                    await self.smart_delay_async(2.0, 3.0)
+                    return True
+            
+            self.logger.info("No good match found")
+            self.handle_consecutive_failures()
             return False
             
         except Exception as e:
-            self.logger.error(f"Game solving failed: {e}")
+            self.logger.error(f"Solver error: {e}")
+            if "crashed" in str(e).lower() or "closed" in str(e).lower():
+                self.logger.info("Attempting browser recovery...")
+                if await self.restart_browser():
+                    return await self.solve_symbol_game()
+            
+            self.handle_consecutive_failures()
             return False
+
+    def handle_consecutive_failures(self):
+        self.state['consecutive_fails'] += 1
+        self.logger.info(f"Consecutive failures: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}")
+        
+        if self.state['consecutive_fails'] >= CONFIG['refresh_page_after_failures']:
+            self.logger.info("Refreshing page...")
+            self.send_telegram(f"🔄 <b>Refreshing page</b> - {self.state['consecutive_fails']} failures")
+            try:
+                asyncio.create_task(self.page.reload())
+                self.state['consecutive_fails'] = 0
+            except Exception as e:
+                self.logger.error(f"Page refresh failed: {e}")
+        elif self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
+            self.logger.error("Too many failures! Stopping...")
+            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
+            self.stop()
 
     def update_credits_earned(self, credits_earned=1):
         """Update credits and check daily target"""
+        self.check_daily_reset()
         self.state['credits_earned_today'] += credits_earned
         
+        session_record = {
+            'timestamp': self.get_ist_time().strftime('%H:%M IST'),
+            'credits': credits_earned,
+            'total_earned': self.state['credits_earned_today']
+        }
+        self.state['session_history'].append(session_record)
+        if len(self.state['session_history']) > 10:
+            self.state['session_history'] = self.state['session_history'][-10:]
+            
         if self.state['daily_target'] > 0 and self.state['credits_earned_today'] >= self.state['daily_target']:
             self.logger.info(f"🎉 DAILY TARGET REACHED! {self.state['credits_earned_today']}/{self.state['daily_target']}")
-            self.send_telegram(f"🎉 <b>DAILY TARGET ACHIEVED!</b>\n💎 Earned: {self.state['credits_earned_today']} credits")
+            self.send_telegram(
+                f"🎉 <b>DAILY TARGET ACHIEVED!</b>\n"
+                f"💎 Earned: {self.state['credits_earned_today']} credits\n"
+                f"🎯 Target: {self.state['daily_target']} credits\n"
+                f"⏰ Time: {self.get_ist_time().strftime('%I:%M %p IST')}\n"
+                f"🛑 Auto-pausing until tomorrow..."
+            )
             self.state['is_paused'] = True
+            return True
+        return False
+
+    def check_daily_reset(self):
+        """Check and reset daily credits if needed"""
+        ist_now = self.get_ist_time()
+        reset_time = self.state['daily_start_time']
+        if ist_now >= reset_time:
+            self.logger.info("🎯 DAILY RESET - Starting new day!")
+            self.state['credits_earned_today'] = 0
+            self.state['daily_start_time'] = self.get_daily_reset_time()
+            self.state['session_history'] = []
+            if self.state['daily_target'] > 0:
+                self.send_telegram(
+                    f"🔄 <b>New Day Started!</b>\n"
+                    f"🎯 Target: {self.state['daily_target']} credits\n"
+                    f"⏰ Reset: {self.state['daily_start_time'].strftime('%I:%M %p IST')}"
+                )
             return True
         return False
 
     async def restart_browser(self):
         """Restart browser with cooldown"""
         current_time = time.time()
-        if current_time - self.state['last_restart_time'] < 10:  # 10 second cooldown
+        if current_time - self.state['last_restart_time'] < 10:
             self.logger.info("Restart cooldown active, waiting...")
             await asyncio.sleep(10)
             
@@ -804,24 +1067,6 @@ class CreditGoalSolver:
         if self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
             self.logger.error("Too many failures, stopping...")
             self.stop()
-
-    def check_daily_reset(self):
-        """Check and reset daily credits if needed"""
-        ist_now = self.get_ist_time()
-        reset_time = self.state['daily_start_time']
-        if ist_now >= reset_time:
-            self.logger.info("🎯 DAILY RESET - Starting new day!")
-            self.state['credits_earned_today'] = 0
-            self.state['daily_start_time'] = self.get_daily_reset_time()
-            self.state['session_history'] = []
-            if self.state['daily_target'] > 0:
-                self.send_telegram(
-                    f"🔄 <b>New Day Started!</b>\n"
-                    f"🎯 Target: {self.state['daily_target']} credits\n"
-                    f"⏰ Reset: {self.state['daily_start_time'].strftime('%I:%M %p IST')}"
-                )
-            return True
-        return False
 
     def start(self):
         if self.state['is_running']:
