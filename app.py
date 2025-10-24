@@ -16,6 +16,7 @@ import json
 import gc
 import asyncio
 import datetime
+import shutil
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
@@ -56,6 +57,7 @@ class UltimateAdshareBot:
         self.page = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
+        self.profile_dir = "/tmp/firefox_profile"
         
         # State Management
         self.state = {
@@ -130,6 +132,8 @@ class UltimateAdshareBot:
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
                     self.send_telegram("🤖 <b>AdShare ULTIMATE Bot Started!</b>")
                     return True
+            else:
+                self.logger.warning(f"Telegram setup failed: {response.status_code}")
             return False
         except Exception as e:
             self.logger.error(f"Telegram setup failed: {e}")
@@ -181,7 +185,6 @@ class UltimateAdshareBot:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    # ==================== PLAYWRIGHT SETUP WITH UBLOCK ====================
     async def setup_playwright(self):
         """Setup Playwright with uBlock Origin"""
         self.logger.info("Setting up Playwright with uBlock...")
@@ -189,23 +192,23 @@ class UltimateAdshareBot:
         try:
             self.playwright = await async_playwright().start()
             
-            launch_args = [
-                '--headless=new',
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-setuid-sandbox',
-                '--disable-gpu',
-            ]
+            # Prepare Firefox profile with uBlock Origin
+            profile_dir = self.profile_dir
+            extensions_dir = os.path.join(profile_dir, "extensions")
+            os.makedirs(extensions_dir, exist_ok=True)
             
-            # Add extension args if uBlock path exists
             ublock_xpi_path = CONFIG['ublock_path']
             if os.path.exists(ublock_xpi_path):
-                launch_args.append(f'--load-extension={ublock_xpi_path}')
-                self.logger.info("Launching with uBlock Origin extension")
+                # Copy uBlock .xpi to extensions directory
+                ublock_dest = os.path.join(extensions_dir, "uBlock0@raymondhill.net.xpi")
+                shutil.copy(ublock_xpi_path, ublock_dest)
+                self.logger.info("uBlock Origin copied to Firefox profile")
             else:
-                self.logger.warning("uBlock Origin not found, launching without extension")
+                self.logger.warning("uBlock Origin .xpi not found, launching without extension")
+            
+            launch_args = [
+                '--headless=new',
+            ]
             
             # Browser context options
             context_options = {
@@ -217,9 +220,10 @@ class UltimateAdshareBot:
             
             # Use persistent context for Firefox
             context = await self.playwright.firefox.launch_persistent_context(
-                user_data_dir="/tmp/firefox_profile",
+                user_data_dir=profile_dir,
                 headless=True,
                 args=launch_args,
+                timeout=300000,  # Increased timeout to 300s
                 **context_options
             )
             
@@ -256,7 +260,6 @@ class UltimateAdshareBot:
         await asyncio.sleep(delay)
         return delay
 
-    # ==================== BREAK SYSTEM ====================
     async def take_short_break(self):
         """Take a short break"""
         break_duration = random.randint(*CONFIG['short_break_duration'])
@@ -290,7 +293,6 @@ class UltimateAdshareBot:
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         return now_ist >= self.state['next_restart_time']
 
-    # ==================== PAUSE/RESUME SYSTEM ====================
     def pause(self):
         """Pause the solver"""
         if not self.state['is_running']:
@@ -319,7 +321,6 @@ class UltimateAdshareBot:
         self.send_telegram("▶️ <b>Solver Resumed</b>")
         return "✅ Solver resumed successfully!"
 
-    # ==================== ULTIMATE LOGIN WITH 12+ METHODS ====================
     async def ultimate_login(self):
         """ULTIMATE LOGIN WITH 12+ METHODS"""
         try:
@@ -667,7 +668,6 @@ class UltimateAdshareBot:
         except Exception as e:
             return f"❌ Credit check failed: {str(e)}"
 
-    # ==================== GAME SOLVING LOGIC ====================
     def is_browser_alive(self):
         """Check if browser is alive"""
         try:
@@ -847,7 +847,6 @@ class UltimateAdshareBot:
             self.handle_consecutive_failures()
             return False
 
-    # ==================== ERROR HANDLING ====================
     def handle_consecutive_failures(self):
         """Handle consecutive failures"""
         self.state['consecutive_fails'] += 1
@@ -873,7 +872,6 @@ class UltimateAdshareBot:
             self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
             self.stop()
 
-    # ==================== MAIN SOLVER LOOP ====================
     async def solver_loop(self):
         """Main solving loop"""
         self.logger.info("Starting solver loop...")
@@ -1018,14 +1016,18 @@ class UltimateAdshareBot:
     async def cleanup_playwright(self):
         """Cleanup Playwright resources"""
         try:
+            if self.page:
+                await self.page.close()
             if self.browser:
                 await self.browser.close()
             if self.playwright:
                 await self.playwright.stop()
+            self.page = None
+            self.browser = None
+            self.playwright = None
         except Exception as e:
             self.logger.warning(f"Playwright cleanup warning: {e}")
 
-    # ==================== CONTROL METHODS ====================
     def start(self):
         """Start the solver"""
         if self.state['is_running']:
@@ -1045,6 +1047,7 @@ class UltimateAdshareBot:
             except Exception as e:
                 self.logger.error(f"Solver loop error: {e}")
             finally:
+                loop.run_until_complete(self.cleanup_playwright())
                 loop.close()
         
         self.solver_thread = threading.Thread(target=run_solver)
@@ -1064,22 +1067,15 @@ class UltimateAdshareBot:
         self.state['status'] = 'stopped'
         
         async def close_playwright():
-            try:
-                if self.browser:
-                    await self.browser.close()
-                if self.playwright:
-                    await self.playwright.stop()
-            except Exception as e:
-                self.logger.warning(f"Playwright close warning: {e}")
+            await self.cleanup_playwright()
         
         def run_cleanup():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
                 loop.run_until_complete(close_playwright())
+            finally:
                 loop.close()
-            except Exception as e:
-                self.logger.warning(f"Cleanup warning: {e}")
         
         cleanup_thread = threading.Thread(target=run_cleanup)
         cleanup_thread.daemon = True
@@ -1118,14 +1114,13 @@ class UltimateAdshareBot:
 🎯 Total Games: {self.state['total_solved']}
 💰 Today's Credits: {self.state['credits_earned_today']}/{self.state['daily_target']}
 📈 Hourly Rate: {hourly_rate:.1f} games/h
-🌅 Next Reset: {next_reset.strftime('%Y-%-m-%d %H:%M IST')}
+🌅 Next Reset: {next_reset.strftime('%Y-%m-%d %H:%M IST')}
 ⏳ Time Until Reset: {hours}h {minutes}m
 🔄 Next Restart: {next_restart}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
         """
 
-# Telegram Bot
 class TelegramBot:
     def __init__(self):
         self.solver = UltimateAdshareBot()
