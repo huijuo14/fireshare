@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare ULTIMATE BOT - Fixed Syntax & Random Start Time
-✅ Fixed Syntax Errors ✅ Random Start Time (6-8 AM)
+AdShare ULTIMATE BOT - Fixed Restart Time & Pause Command
+✅ Random Restart (6-7 AM) ✅ Pause/Resume Commands
 ✅ uBlock Origin ✅ All Features Working
 """
 
@@ -36,7 +36,7 @@ CONFIG = {
     'screenshot_cooldown_minutes': 5,
     'daily_target': 3000,
     'reset_time_ist': "05:30",  # 5:30 AM IST
-    'start_time_range': ("06:00", "08:00"),  # Random start between 6-8 AM
+    'restart_time_range': ("06:00", "07:00"),  # Random restart between 6-7 AM
     'ublock_path': "/app/ublock_origin",
     'natural_failure_rate': 0.001,  # 0.1% failure rate
     'micro_break_range': (1, 3),
@@ -61,6 +61,7 @@ class UltimateAdshareBot:
         # State Management
         self.state = {
             'is_running': False,
+            'is_paused': False,
             'total_solved': 0,
             'status': 'stopped',
             'last_credits': 'Unknown',
@@ -73,7 +74,7 @@ class UltimateAdshareBot:
             'last_reset_date': datetime.date.today().isoformat(),
             'games_solved_today': 0,
             'start_time': time.time(),
-            'scheduled_start_time': self.get_random_start_time(),
+            'next_restart_time': self.get_random_restart_time(),
         }
         
         self.solver_thread = None
@@ -81,15 +82,15 @@ class UltimateAdshareBot:
         self.setup_logging()
         self.setup_telegram()
     
-    def get_random_start_time(self):
-        """Get random start time between 6-8 AM"""
+    def get_random_restart_time(self):
+        """Get random restart time between 6-7 AM"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         today = now_ist.date()
         
         # Parse time range
-        start_min, start_max = CONFIG['start_time_range']
-        min_time = datetime.datetime.strptime(start_min, "%H:%M").time()
-        max_time = datetime.datetime.strptime(start_max, "%H:%M").time()
+        restart_min, restart_max = CONFIG['restart_time_range']
+        min_time = datetime.datetime.strptime(restart_min, "%H:%M").time()
+        max_time = datetime.datetime.strptime(restart_max, "%H:%M").time()
         
         # Generate random time between min and max
         min_minutes = min_time.hour * 60 + min_time.minute
@@ -269,7 +270,7 @@ class UltimateAdshareBot:
             return True
             
         except Exception as e:
-            self.logger.error(f"Playwright setup failed: {e}")
+            self.logger.error(f"Playwright setup failed: {e")
             return False
 
     async def smart_delay_async(self, min_delay=None, max_delay=None):
@@ -312,10 +313,39 @@ class UltimateAdshareBot:
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         return now_ist.hour in CONFIG['night_hours']
 
-    def should_start_now(self):
-        """Check if it's time to start based on random schedule"""
+    def should_restart_now(self):
+        """Check if it's time to restart based on random schedule"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
-        return now_ist >= self.state['scheduled_start_time']
+        return now_ist >= self.state['next_restart_time']
+
+    # ==================== PAUSE/RESUME SYSTEM ====================
+    def pause(self):
+        """Pause the solver"""
+        if not self.state['is_running']:
+            return "❌ Solver is not running"
+        
+        if self.state['is_paused']:
+            return "⏸️ Solver is already paused"
+        
+        self.state['is_paused'] = True
+        self.state['status'] = 'paused'
+        self.logger.info("Solver paused")
+        self.send_telegram("⏸️ <b>Solver Paused</b>")
+        return "✅ Solver paused successfully!"
+
+    def resume(self):
+        """Resume the solver"""
+        if not self.state['is_running']:
+            return "❌ Solver is not running"
+        
+        if not self.state['is_paused']:
+            return "▶️ Solver is already running"
+        
+        self.state['is_paused'] = False
+        self.state['status'] = 'running'
+        self.logger.info("Solver resumed")
+        self.send_telegram("▶️ <b>Solver Resumed</b>")
+        return "✅ Solver resumed successfully!"
 
     # ==================== ULTIMATE LOGIN WITH 12+ METHODS ====================
     async def ultimate_login(self):
@@ -628,6 +658,9 @@ class UltimateAdshareBot:
                     self.state['credits_earned_today'] = 0
                     self.state['games_solved_today'] = 0
                     self.state['last_reset_date'] = current_date
+                    # Schedule new random restart time
+                    self.state['next_restart_time'] = self.get_random_restart_time()
+                    
                     self.logger.info(f"💰 Daily reset completed! Previous: {old_credits}, New target: {self.state['daily_target']}")
                     self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits\n💰 Yesterday: {old_credits} credits")
                     return True
@@ -783,7 +816,7 @@ class UltimateAdshareBot:
 
     async def solve_symbol_game(self):
         """Main game solving logic"""
-        if not self.state['is_running']:
+        if not self.state['is_running'] or self.state['is_paused']:
             return False
         
         if not self.is_browser_alive():
@@ -905,6 +938,18 @@ class UltimateAdshareBot:
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
+                # Check if paused
+                if self.state['is_paused']:
+                    await asyncio.sleep(10)
+                    continue
+                
+                # Check if it's time to restart (6-7 AM)
+                if self.should_restart_now():
+                    self.logger.info("🔄 Scheduled restart time reached! Restarting...")
+                    self.send_telegram("🔄 <b>Scheduled Restart</b>\n⏰ Restarting bot as scheduled")
+                    await self.perform_restart()
+                    continue
+                
                 if not self.is_browser_alive():
                     self.logger.error("Browser dead, stopping solver")
                     self.stop()
@@ -976,20 +1021,49 @@ class UltimateAdshareBot:
             self.logger.error("Too many failures, stopping...")
             self.stop()
 
+    async def perform_restart(self):
+        """Perform a complete restart"""
+        self.logger.info("Performing scheduled restart...")
+        
+        # Save current state
+        current_credits = self.state['credits_earned_today']
+        current_target = self.state['daily_target']
+        
+        # Cleanup
+        await self.cleanup_playwright()
+        
+        # Reset state but preserve credits and target
+        self.state['is_running'] = True
+        self.state['is_paused'] = False
+        self.state['consecutive_fails'] = 0
+        self.state['credits_earned_today'] = current_credits
+        self.state['daily_target'] = current_target
+        self.state['next_restart_time'] = self.get_random_restart_time()
+        
+        # Restart solver loop
+        await self.solver_loop()
+
+    async def cleanup_playwright(self):
+        """Cleanup Playwright resources"""
+        try:
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+        except Exception as e:
+            self.logger.warning(f"Playwright cleanup warning: {e}")
+
     # ==================== CONTROL METHODS ====================
     def start(self):
         """Start the solver"""
         if self.state['is_running']:
             return "❌ Solver already running"
         
-        # Check if it's time to start based on random schedule
-        if not self.should_start_now():
-            scheduled_time = self.state['scheduled_start_time'].strftime("%H:%M IST")
-            return f"⏰ Bot scheduled to start at {scheduled_time}"
-        
         self.state['is_running'] = True
+        self.state['is_paused'] = False
         self.state['consecutive_fails'] = 0
         self.state['start_time'] = time.time()
+        self.state['next_restart_time'] = self.get_random_restart_time()
         
         def run_solver():
             loop = asyncio.new_event_loop()
@@ -1005,13 +1079,15 @@ class UltimateAdshareBot:
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        self.logger.info("ULTIMATE solver started successfully!")
-        self.send_telegram("🚀 <b>ULTIMATE Solver Started!</b>")
-        return "✅ ULTIMATE solver started successfully!"
+        restart_time = self.state['next_restart_time'].strftime("%H:%M IST")
+        self.logger.info(f"ULTIMATE solver started successfully! Next restart: {restart_time}")
+        self.send_telegram(f"🚀 <b>ULTIMATE Solver Started!</b>\n⏰ Next restart: {restart_time}")
+        return f"✅ ULTIMATE solver started successfully!\n⏰ Next restart: {restart_time}"
 
     def stop(self):
         """Stop the solver"""
         self.state['is_running'] = False
+        self.state['is_paused'] = False
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
@@ -1058,18 +1134,21 @@ class UltimateAdshareBot:
         hours_running = max(1, runtime / 3600)
         hourly_rate = self.state['games_solved_today'] / hours_running
         
-        scheduled_time = self.state['scheduled_start_time'].strftime("%H:%M IST")
+        next_restart = self.state['next_restart_time'].strftime("%H:%M IST")
+        
+        status_icon = "⏸️" if self.state['is_paused'] else "🔄"
+        status_text = "paused" if self.state['is_paused'] else self.state['status']
         
         return f"""
 📊 <b>Status Report</b>
 ⏰ {now_ist.strftime('%H:%M:%S IST')}
-🔄 Status: {self.state['status']}
+{status_icon} Status: {status_text}
 🎯 Total Games: {self.state['total_solved']}
 💰 Today's Credits: {self.state['credits_earned_today']}/{self.state['daily_target']}
 📈 Hourly Rate: {hourly_rate:.1f} games/h
 🌅 Next Reset: {next_reset.strftime('%Y-%m-%d %H:%M IST')}
 ⏳ Time Until Reset: {hours}h {minutes}m
-⏰ Scheduled Start: {scheduled_time}
+🔄 Next Restart: {next_restart}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
         """
@@ -1126,6 +1205,10 @@ class TelegramBot:
             response = self.solver.start()
         elif text.startswith('/stop'):
             response = self.solver.stop()
+        elif text.startswith('/pause'):
+            response = self.solver.pause()
+        elif text.startswith('/resume'):
+            response = self.solver.resume()
         elif text.startswith('/status'):
             response = self.solver.status()
         elif text.startswith('/help'):
@@ -1134,6 +1217,8 @@ class TelegramBot:
 
 /start - Start solver
 /stop - Stop solver  
+/pause - Pause solver
+/resume - Resume solver
 /status - Check status
 /credits - Check credit balance
 /screenshot - Take screenshot
@@ -1150,7 +1235,8 @@ class TelegramBot:
 📊 24/7 operation
 ⏰ Smart break system
 🎯 99.9% success rate
-⏰ Random start time (6-8 AM)
+🔄 Auto-restart (6-7 AM)
+⏸️ Pause/Resume control
             """
         elif text.startswith('/credits'):
             async def check_credits_async():
