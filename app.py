@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Playwright Edition
-FIXED LOGIN VERSION
+FIXED LOGIN - WORKS WITH JAVASCRIPT FORM
 """
 
 import os
@@ -301,7 +301,7 @@ class PlaywrightSymbolGameSolver:
 
     # ==================== FIXED LOGIN METHOD ====================
     async def force_login(self):
-        """FIXED LOGIN - WORKING BUTTON CLICK"""
+        """FIXED LOGIN - CLICKS THE VISIBLE BUTTON THAT USES JAVASCRIPT"""
         try:
             self.logger.info("LOGIN: Attempting login...")
             
@@ -366,24 +366,21 @@ class PlaywrightSymbolGameSolver:
             
             await asyncio.sleep(2)
             
-            # FIXED: Better login button detection and clicking
+            # FIXED: Click the visible button that uses JavaScript
+            # The page source shows: <a href='javascript:void(0)' onclick='document.login.submit()' class='button'>
             login_clicked = False
             
-            # Try multiple button selectors with waiting
+            # Try the visible button first (the one that says "Log In")
             button_selectors = [
-                "button[type='submit']",
-                "input[type='submit']",
+                "a.button",  # The visible button with class 'button'
+                "a[onclick*='document.login.submit()']",  # Button with the JavaScript submit
+                "a[href='javascript:void(0)']",  # Any JavaScript button
                 "button",
-                "input[value*='Login']",
-                "input[value*='Sign']",
-                "[type='submit']",
-                "form[name='login'] button",
-                "form[name='login'] input[type='submit']"
+                "input[type='submit']"
             ]
             
             for selector in button_selectors:
                 try:
-                    # Check if element exists and is visible
                     element = await self.page.query_selector(selector)
                     if element and await element.is_visible():
                         await element.click()
@@ -394,16 +391,17 @@ class PlaywrightSymbolGameSolver:
                     self.logger.debug(f"Failed with {selector}: {e}")
                     continue
             
-            # If no button found, try pressing Enter
+            # If button click doesn't work, try JavaScript submission
             if not login_clicked:
                 try:
-                    await self.page.keyboard.press('Enter')
-                    self.logger.info("Login submitted with Enter key")
+                    # Execute JavaScript to submit the form directly
+                    await self.page.evaluate("document.login.submit()")
+                    self.logger.info("Form submitted via JavaScript")
                     login_clicked = True
                 except Exception as e:
-                    self.logger.error(f"Enter key failed: {e}")
+                    self.logger.error(f"JavaScript submission failed: {e}")
             
-            # Wait for navigation after login attempt
+            # Wait for navigation
             try:
                 await self.page.wait_for_navigation(timeout=15000)
                 self.logger.info("Navigation detected after login")
@@ -873,7 +871,7 @@ class TelegramBot:
 /help - Show help
 
 💡 <b>Playwright Version</b>
-🚀 Fixed login button click
+🚀 Fixed JavaScript login button
 🦊 Using Firefox
 💾 Memory optimized
             """
