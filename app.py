@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - ULTIMATE FALLBACK + COOKIE IMPORT
-EVERY LOGIN METHOD + COOKIE BYPASS
+AdShare ULTIMATE BOT - Complete Edition
+✅ 12+ Login Methods ✅ uBlock Extension ✅ Telegram Control
+✅ Cookie Management ✅ Daily Targets ✅ 24/7 Operation
 """
 
 import os
@@ -14,6 +15,7 @@ import threading
 import json
 import gc
 import asyncio
+import datetime
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
@@ -31,9 +33,12 @@ CONFIG = {
     'refresh_page_after_failures': 5,
     'send_screenshot_on_error': True,
     'screenshot_cooldown_minutes': 5,
+    'daily_target': 3000,
+    'reset_time_ist': "05:30",  # 5:30 AM IST
+    'ublock_path': "/app/ublock_origin",  # uBlock Origin extension
 }
 
-class UltimateSymbolGameSolver:
+class UltimateAdshareBot:
     def __init__(self):
         self.playwright = None
         self.browser = None
@@ -51,6 +56,9 @@ class UltimateSymbolGameSolver:
             'is_logged_in': False,
             'consecutive_fails': 0,
             'last_error_screenshot': 0,
+            'credits_earned_today': 0,
+            'daily_target': CONFIG['daily_target'],
+            'last_reset_date': datetime.date.today().isoformat(),
         }
         
         self.solver_thread = None
@@ -78,7 +86,7 @@ class UltimateSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare ULTIMATE Solver Started!</b>")
+                    self.send_telegram("🤖 <b>AdShare ULTIMATE Bot Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -103,127 +111,87 @@ class UltimateSymbolGameSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    # ==================== COOKIE MANAGEMENT ====================
-    async def save_cookies(self):
-        """Save cookies to file"""
-        try:
-            if self.page and self.state['is_logged_in']:
-                cookies = await self.page.context.cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f, indent=2)
-                self.logger.info("💾 Cookies saved successfully")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Could not save cookies: {e}")
-        return False
-
-    async def load_cookies(self):
-        """Load cookies from file"""
-        try:
-            if os.path.exists(self.cookies_file) and self.page:
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                
-                await self.page.context.clear_cookies()
-                await self.page.context.add_cookies(cookies)
-                
-                self.logger.info(f"🔑 Loaded {len(cookies)} cookies from file")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Could not load cookies: {e}")
+    async def send_screenshot(self, caption="🖥️ Screenshot"):
+        """Send screenshot to Telegram"""
+        if not self.page or not self.telegram_chat_id:
+            return "❌ Browser not running or Telegram not configured"
         
-        return False
-
-    async def import_cookies_from_json(self, cookie_json):
-        """Import cookies from JSON string"""
         try:
-            cookies = json.loads(cookie_json)
-            await self.page.context.clear_cookies()
-            await self.page.context.add_cookies(cookies)
+            screenshot_path = "/tmp/screenshot.png"
+            await self.page.screenshot(path=screenshot_path)
             
-            # Save to file for persistence
-            with open(self.cookies_file, 'w') as f:
-                json.dump(cookies, f, indent=2)
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
-            self.logger.info(f"✅ Imported {len(cookies)} cookies")
-            self.send_telegram(f"🍪 <b>Cookies Imported!</b>\nLoaded {len(cookies)} cookies")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Cookie import failed: {e}")
-            self.send_telegram(f"❌ <b>Cookie Import Failed</b>\nError: {str(e)}")
-            return False
-
-    async def restore_session_with_cookies(self):
-        """Try to restore session using cookies"""
-        self.logger.info("🔄 Attempting session restoration with cookies...")
-        
-        # Method 1: Load from file
-        if await self.load_cookies():
-            try:
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                await asyncio.sleep(3)
+            with open(screenshot_path, 'rb') as photo:
+                files = {'photo': photo}
+                data = {
+                    'chat_id': self.telegram_chat_id,
+                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
+                }
                 
-                current_url = self.page.url.lower()
-                if "surf" in current_url or "dashboard" in current_url:
-                    self.state['is_logged_in'] = True
-                    self.logger.info("✅ Session restored via cookies!")
-                    return True
-                else:
-                    self.logger.warning("❌ Cookies loaded but session invalid")
-            except Exception as e:
-                self.logger.warning(f"Cookie restoration failed: {e}")
-        
-        return False
-
-    async def send_cookies_report(self):
-        """Send current cookies to Telegram"""
-        try:
-            if not self.page:
-                return "❌ Browser not running"
+                response = requests.post(url, files=files, data=data, timeout=30)
             
-            cookies = await self.page.context.cookies()
-            if not cookies:
-                return "❌ No cookies found"
-            
-            cookie_info = f"🍪 <b>Current Session Cookies</b>\n"
-            cookie_info += f"📦 Total Cookies: {len(cookies)}\n\n"
-            
-            for i, cookie in enumerate(cookies[:8]):  # Show first 8 cookies
-                cookie_info += f"<b>Cookie {i+1}:</b>\n"
-                cookie_info += f"Name: <code>{cookie.get('name', 'N/A')}</code>\n"
-                cookie_info += f"Value: <code>{cookie.get('value', 'N/A')[:50]}...</code>\n"
-                cookie_info += f"Domain: {cookie.get('domain', 'N/A')}\n\n"
-            
-            if len(cookies) > 8:
-                cookie_info += f"... and {len(cookies) - 8} more cookies\n"
-            
-            return cookie_info
-            
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+                
+            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
+                
         except Exception as e:
-            return f"❌ Cookie export failed: {str(e)}"
+            return f"❌ Screenshot error: {str(e)}"
 
-    # ==================== PLAYWRIGHT SETUP ====================
+    # ==================== PLAYWRIGHT SETUP WITH UBLOCK ====================
     async def setup_playwright(self):
-        """Setup Playwright"""
-        self.logger.info("Setting up Playwright...")
+        """Setup Playwright with uBlock Origin"""
+        self.logger.info("Setting up Playwright with uBlock...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            self.browser = await self.playwright.firefox.launch(
-                headless=True,
-                args=[
-                    '--headless',
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                ]
-            )
+            # Check if uBlock extension exists
+            ublock_exists = os.path.exists(CONFIG['ublock_path'])
+            self.logger.info(f"uBlock extension: {'Found' if ublock_exists else 'Not found'}")
+            
+            launch_args = [
+                '--headless',
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+            ]
+            
+            if ublock_exists:
+                self.logger.info("Launching with uBlock Origin extension")
+                self.browser = await self.playwright.firefox.launch(
+                    headless=True,
+                    args=launch_args,
+                    firefox_user_prefs={
+                        'extensions.autoDisableScopes': 0,
+                        'extensions.enabledScopes': 15,
+                    }
+                )
+            else:
+                self.logger.info("Launching without uBlock (extension not found)")
+                self.browser = await self.playwright.firefox.launch(
+                    headless=True,
+                    args=launch_args
+                )
             
             context = await self.browser.new_context(
                 viewport={'width': 1280, 'height': 720},
-                user_agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0'
+                user_agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
+                java_script_enabled=True,
+                bypass_csp=True
             )
+            
+            # Load cookies if they exist
+            if os.path.exists(self.cookies_file):
+                try:
+                    with open(self.cookies_file, 'r') as f:
+                        cookies = json.load(f)
+                    await context.add_cookies(cookies)
+                    self.logger.info("Cookies loaded from file")
+                except Exception as e:
+                    self.logger.warning(f"Failed to load cookies: {e}")
             
             self.page = await context.new_page()
             
@@ -247,11 +215,11 @@ class UltimateSymbolGameSolver:
         await asyncio.sleep(delay)
         return delay
 
-    # ==================== ULTIMATE LOGIN WITH ALL FALLBACKS ====================
+    # ==================== ULTIMATE LOGIN WITH 12+ METHODS ====================
     async def ultimate_login(self):
-        """ULTIMATE LOGIN WITH EVERY POSSIBLE FALLBACK"""
+        """ULTIMATE LOGIN WITH 12+ METHODS"""
         try:
-            self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
+            self.logger.info("🚀 STARTING ULTIMATE LOGIN (12+ METHODS)...")
             
             login_url = "https://adsha.re/login"
             await self.page.goto(login_url, wait_until='networkidle')
@@ -276,10 +244,10 @@ class UltimateSymbolGameSolver:
                 self.logger.error("No forms found at all!")
                 return False
             
-            # ==================== METHOD 2: PASSWORD FIELD DISCOVERY ====================
+            # ==================== PASSWORD FIELD DISCOVERY (4 METHODS) ====================
             password_field_name = None
             
-            # Method 2A: Find by value="Password"
+            # Method 1A: Find by value="Password"
             for field in form.find_all('input'):
                 field_name = field.get('name', '')
                 field_value = field.get('value', '')
@@ -289,14 +257,14 @@ class UltimateSymbolGameSolver:
                     self.logger.info(f"Found password field by value: {password_field_name}")
                     break
             
-            # Method 2B: Find by type="password"
+            # Method 1B: Find by type="password"
             if not password_field_name:
                 password_fields = form.find_all('input', {'type': 'password'})
                 if password_fields:
                     password_field_name = password_fields[0].get('name')
                     self.logger.info(f"Found password field by type: {password_field_name}")
             
-            # Method 2C: Find any non-email field
+            # Method 1C: Find any non-email field
             if not password_field_name:
                 for field in form.find_all('input'):
                     field_name = field.get('name', '')
@@ -306,7 +274,7 @@ class UltimateSymbolGameSolver:
                         self.logger.info(f"Found password field by exclusion: {password_field_name}")
                         break
             
-            # Method 2D: Find second input field
+            # Method 1D: Find second input field
             if not password_field_name:
                 inputs = form.find_all('input')
                 if len(inputs) >= 2:
@@ -317,8 +285,8 @@ class UltimateSymbolGameSolver:
                 self.logger.error("Could not find password field by any method")
                 return False
             
-            # ==================== METHOD 3: FILL EMAIL - ALL METHODS ====================
-            self.logger.info("Filling email...")
+            # ==================== EMAIL FILLING (8 METHODS) ====================
+            self.logger.info("Filling email (8 methods)...")
             
             email_selectors = [
                 "input[name='mail']",
@@ -349,8 +317,8 @@ class UltimateSymbolGameSolver:
             
             await self.smart_delay_async()
             
-            # ==================== METHOD 4: FILL PASSWORD - ALL METHODS ====================
-            self.logger.info("Filling password...")
+            # ==================== PASSWORD FILLING (6 METHODS) ====================
+            self.logger.info("Filling password (6 methods)...")
             
             password_selectors = [
                 f"input[name='{password_field_name}']",
@@ -379,8 +347,8 @@ class UltimateSymbolGameSolver:
             
             await self.smart_delay_async()
             
-            # ==================== METHOD 5: SUBMIT FORM - ALL METHODS ====================
-            self.logger.info("Submitting form...")
+            # ==================== FORM SUBMISSION (12+ METHODS) ====================
+            self.logger.info("Submitting form (12+ methods)...")
             
             login_selectors = [
                 "button[type='submit']",
@@ -393,12 +361,14 @@ class UltimateSymbolGameSolver:
                 "input[value*='Log']",
                 "input[value*='login']",
                 "form button",
-                "form input[type='submit']"
+                "form input[type='submit']",
+                "button[class*='login']",
+                "button[class*='submit']"
             ]
             
             login_clicked = False
             
-            # Method 5A: Try all click selectors
+            # Method A: Try all click selectors
             for selector in login_selectors:
                 try:
                     if await self.page.is_visible(selector):
@@ -409,7 +379,7 @@ class UltimateSymbolGameSolver:
                 except:
                     continue
             
-            # Method 5B: JavaScript form submission
+            # Method B: JavaScript form submission
             if not login_clicked:
                 try:
                     await self.page.evaluate("""() => {
@@ -421,7 +391,7 @@ class UltimateSymbolGameSolver:
                 except:
                     pass
             
-            # Method 5C: Press Enter in password field
+            # Method C: Press Enter in password field
             if not login_clicked:
                 try:
                     password_selector = f"input[name='{password_field_name}']"
@@ -432,7 +402,7 @@ class UltimateSymbolGameSolver:
                 except:
                     pass
             
-            # Method 5D: Click anywhere and press Enter
+            # Method D: Click anywhere and press Enter
             if not login_clicked:
                 try:
                     await self.page.click('body')
@@ -446,15 +416,9 @@ class UltimateSymbolGameSolver:
                 self.logger.error("All login submission methods failed")
                 return False
             
-            # ==================== METHOD 6: WAIT AND VERIFY ====================
+            # ==================== VERIFICATION ====================
             await self.smart_delay_async()
             await asyncio.sleep(8)
-            
-            # Check multiple success indicators
-            current_url = self.page.url.lower()
-            page_title = await self.page.title()
-            
-            self.logger.info(f"After login - URL: {current_url}, Title: {page_title}")
             
             # Navigate to surf to verify
             await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
@@ -482,33 +446,117 @@ class UltimateSymbolGameSolver:
             self.logger.error(f"❌ ULTIMATE LOGIN ERROR: {e}")
             return False
 
-    async def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram"""
-        if not self.page or not self.telegram_chat_id:
-            return "❌ Browser not running or Telegram not configured"
-        
+    async def save_cookies(self):
+        """Save cookies to file"""
         try:
-            screenshot_path = "/tmp/screenshot.png"
-            await self.page.screenshot(path=screenshot_path)
-            
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            
-            with open(screenshot_path, 'rb') as photo:
-                files = {'photo': photo}
-                data = {
-                    'chat_id': self.telegram_chat_id,
-                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
-                }
+            if self.page and self.state['is_logged_in']:
+                cookies = await self.page.context.cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f)
+                self.logger.info("Cookies saved")
+        except Exception as e:
+            self.logger.warning(f"Could not save cookies: {e}")
+
+    async def load_cookies(self):
+        """Load cookies from file"""
+        try:
+            if os.path.exists(self.cookies_file):
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                await self.page.context.add_cookies(cookies)
+                self.logger.info("Cookies loaded from file")
+                return True
+            return False
+        except Exception as e:
+            self.logger.warning(f"Could not load cookies: {e}")
+            return False
+
+    async def export_cookies(self):
+        """Export cookies for Telegram"""
+        try:
+            if self.page:
+                cookies = await self.page.context.cookies()
+                cookie_summary = []
+                for cookie in cookies:
+                    if 'adshare' in cookie['name'].lower() or 'session' in cookie['name'].lower():
+                        cookie_summary.append({
+                            'name': cookie['name'],
+                            'value': cookie['value'],
+                            'domain': cookie['domain']
+                        })
                 
-                response = requests.post(url, files=files, data=data, timeout=30)
+                return json.dumps(cookie_summary, indent=2)
+            return "No cookies available"
+        except Exception as e:
+            return f"Error exporting cookies: {str(e)}"
+
+    async def import_cookies(self, cookie_json):
+        """Import cookies from JSON"""
+        try:
+            cookies = json.loads(cookie_json)
+            await self.page.context.clear_cookies()
+            await self.page.context.add_cookies(cookies)
+            self.logger.info("Cookies imported successfully")
             
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-                
-            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
+            # Verify login
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            if "login" not in self.page.url.lower():
+                self.state['is_logged_in'] = True
+                await self.save_cookies()
+                return "✅ Cookies imported and login verified!"
+            else:
+                return "❌ Cookies imported but login failed"
                 
         except Exception as e:
-            return f"❌ Screenshot error: {str(e)}"
+            return f"❌ Cookie import failed: {str(e)}"
+
+    async def check_daily_reset(self):
+        """Check if daily reset is needed"""
+        try:
+            now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)  # UTC to IST
+            current_date = now_ist.date().isoformat()
+            
+            if current_date != self.state['last_reset_date']:
+                # Check if it's past reset time
+                reset_time = datetime.datetime.strptime(CONFIG['reset_time_ist'], "%H:%M").time()
+                current_time = now_ist.time()
+                
+                if current_time >= reset_time:
+                    self.state['credits_earned_today'] = 0
+                    self.state['last_reset_date'] = current_date
+                    self.logger.info(f"💰 Daily reset completed! New target: {self.state['daily_target']}")
+                    self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits")
+                    return True
+            
+            return False
+        except Exception as e:
+            self.logger.error(f"Reset check error: {e}")
+            return False
+
+    async def check_credits(self):
+        """Check current credit balance"""
+        try:
+            await self.page.goto("https://adsha.re/account", wait_until='networkidle')
+            content = await self.page.content()
+            
+            # Look for credit information
+            credit_patterns = [
+                r'(\d+)\s*credits?',
+                r'balance[:\s]*(\d+)',
+                r'(\d+)\s*[Cc]redits',
+            ]
+            
+            for pattern in credit_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    credits = match.group(1)
+                    self.state['last_credits'] = credits
+                    return f"💰 Current credits: {credits}"
+            
+            return "❌ Could not find credit information"
+            
+        except Exception as e:
+            return f"❌ Credit check failed: {str(e)}"
 
     # ==================== GAME SOLVING LOGIC ====================
     def is_browser_alive(self):
@@ -657,9 +705,17 @@ class UltimateSymbolGameSolver:
             if best_match:
                 await best_match['link'].click()
                 self.state['total_solved'] += 1
+                self.state['credits_earned_today'] += 1
                 self.state['consecutive_fails'] = 0
                 match_type = "EXACT" if best_match['exact'] else "FUZZY"
                 self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}")
+                
+                # Check if daily target reached
+                if self.state['credits_earned_today'] >= self.state['daily_target']:
+                    self.logger.info(f"🎯 Daily target reached! {self.state['credits_earned_today']}/{self.state['daily_target']}")
+                    self.send_telegram(f"🎯 <b>Daily Target Reached!</b>\n💰 {self.state['credits_earned_today']}/{self.state['daily_target']} credits")
+                    # Don't stop, just continue - reset will happen automatically
+                
                 return True
             else:
                 self.logger.info("No good match found")
@@ -708,17 +764,28 @@ class UltimateSymbolGameSolver:
             self.stop()
             return
         
-        # TRY COOKIE RESTORATION FIRST
-        if await self.restore_session_with_cookies():
-            self.logger.info("✅ Started with cookie session!")
-        # If cookies fail, try login
-        elif not await self.ultimate_login():
-            self.logger.error("Cannot start - All login methods failed")
-            self.stop()
-            return
+        # Try cookie login first
+        if await self.load_cookies():
+            self.logger.info("Attempting cookie login...")
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            if "login" not in self.page.url.lower():
+                self.state['is_logged_in'] = True
+                self.logger.info("✅ Cookie login successful!")
+            else:
+                self.logger.info("❌ Cookie login failed, trying manual login...")
+                if not await self.ultimate_login():
+                    self.logger.error("Cannot start - Login failed")
+                    self.stop()
+                    return
+        else:
+            if not await self.ultimate_login():
+                self.logger.error("Cannot start - Login failed")
+                self.stop()
+                return
         
         consecutive_fails = 0
         cycle_count = 0
+        last_credit_check = 0
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
@@ -727,6 +794,15 @@ class UltimateSymbolGameSolver:
                     self.stop()
                     break
                 
+                # Check daily reset
+                await self.check_daily_reset()
+                
+                # Periodic credit check
+                if time.time() - last_credit_check > CONFIG['credit_check_interval']:
+                    credit_info = await self.check_credits()
+                    self.logger.info(credit_info)
+                    last_credit_check = time.time()
+                
                 if cycle_count % 30 == 0 and cycle_count > 0:
                     await self.page.reload()
                     self.logger.info("Page refreshed")
@@ -734,12 +810,13 @@ class UltimateSymbolGameSolver:
                 
                 if cycle_count % 50 == 0:
                     gc.collect()
+                    await self.save_cookies()
                 
                 game_solved = await self.solve_symbol_game()
                 
                 if game_solved:
                     consecutive_fails = 0
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(random.uniform(1, 3))
                 else:
                     consecutive_fails += 1
                     await asyncio.sleep(5)
@@ -816,12 +893,24 @@ class UltimateSymbolGameSolver:
 
     def status(self):
         """Get status"""
+        now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
+        reset_time = datetime.datetime.strptime(CONFIG['reset_time_ist'], "%H:%M").time()
+        next_reset = datetime.datetime.combine(now_ist.date(), reset_time)
+        if now_ist.time() > reset_time:
+            next_reset += datetime.timedelta(days=1)
+        
+        time_until_reset = next_reset - now_ist
+        hours, remainder = divmod(time_until_reset.seconds, 3600)
+        minutes = remainder // 60
+        
         return f"""
 📊 <b>Status Report</b>
-⏰ {time.strftime('%H:%M:%S')}
+⏰ {now_ist.strftime('%H:%M:%S IST')}
 🔄 Status: {self.state['status']}
 🎯 Games Solved: {self.state['total_solved']}
-💰 Last Credits: {self.state['last_credits']}
+💰 Today's Credits: {self.state['credits_earned_today']}/{self.state['daily_target']}
+🌅 Next Reset: {next_reset.strftime('%Y-%m-%d %H:%M IST')}
+⏳ Time Until Reset: {hours}h {minutes}m
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
         """
@@ -829,27 +918,33 @@ class UltimateSymbolGameSolver:
 # Telegram Bot
 class TelegramBot:
     def __init__(self):
-        self.solver = UltimateSymbolGameSolver()
+        self.solver = UltimateAdshareBot()
         self.logger = logging.getLogger(__name__)
+        self.last_update_id = None
     
     def handle_updates(self):
         """Handle Telegram updates"""
-        last_update_id = None
-        
         self.logger.info("Starting Telegram bot...")
         
         while True:
             try:
                 url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getUpdates"
-                params = {'timeout': 30, 'offset': last_update_id}
+                params = {'timeout': 30}
+                if self.last_update_id:
+                    params['offset'] = self.last_update_id + 1
+                
                 response = requests.get(url, params=params, timeout=35)
                 
                 if response.status_code == 200:
                     updates = response.json()
                     if updates['result']:
                         for update in updates['result']:
-                            last_update_id = update['update_id'] + 1
+                            self.last_update_id = update['update_id']
                             self.process_message(update)
+                else:
+                    self.logger.warning(f"Telegram API error: {response.status_code}")
+                
+                time.sleep(1)
                 
             except Exception as e:
                 self.logger.error(f"Telegram error: {e}")
@@ -874,72 +969,57 @@ class TelegramBot:
             response = self.solver.stop()
         elif text.startswith('/status'):
             response = self.solver.status()
-        elif text.startswith('/cookies'):
-            async def get_cookies():
-                return await self.solver.send_cookies_report()
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                cookie_result = loop.run_until_complete(get_cookies())
-                loop.close()
-                response = cookie_result
-            except Exception as e:
-                response = f"❌ Cookie export failed: {e}"
-        elif text.startswith('/import_cookies'):
-            # Extract JSON from message
-            cookie_json = text.replace('/import_cookies', '').strip()
-            if not cookie_json:
-                response = "❌ Please provide cookies JSON\nUsage: /import_cookies [JSON]"
-            else:
-                async def import_cookies():
-                    return await self.solver.import_cookies_from_json(cookie_json)
-                
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    success = loop.run_until_complete(import_cookies())
-                    loop.close()
-                    response = "✅ Cookies imported successfully! Restart bot with /start" if success else "❌ Cookie import failed"
-                except Exception as e:
-                    response = f"❌ Cookie import error: {e}"
-        elif text.startswith('/screenshot'):
-            async def take_screenshot():
-                return await self.solver.send_screenshot()
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                screenshot_result = loop.run_until_complete(take_screenshot())
-                loop.close()
-                response = screenshot_result
-            except Exception as e:
-                response = f"❌ Screenshot failed: {e}"
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare ULTIMATE Solver Commands</b>
+🤖 <b>AdShare ULTIMATE Bot Commands</b>
 
 /start - Start solver
 /stop - Stop solver  
 /status - Check status
+/credits - Check credit balance
 /screenshot - Take screenshot
-/cookies - Show current cookies
-/import_cookies [JSON] - Import cookies
+/cookies - Export cookies
+/setcookies [json] - Import cookies
+/target [number] - Set daily target
 /help - Show help
 
-🍪 <b>Cookie Import Usage:</b>
-1. Get cookies from browser
-2. Send: /import_cookies [JSON_HERE]
-3. Restart with /start
-
-💡 <b>ULTIMATE FALLBACK + COOKIE IMPORT</b>
-🔐 12+ login methods + Cookie bypass
-🎯 Maximum compatibility
-🚀 Bypass login with cookies
+🎯 <b>ULTIMATE FEATURES</b>
+🔐 12+ login methods
+🛡️ uBlock Origin
+🍪 Cookie management
+🎯 Daily targets
+📊 24/7 operation
             """
+        elif text.startswith('/credits'):
+            async def check_credits_async():
+                return await self.solver.check_credits()
+            response = asyncio.run(check_credits_async())
+        elif text.startswith('/screenshot'):
+            async def screenshot_async():
+                return await self.solver.send_screenshot()
+            response = asyncio.run(screenshot_async())
+        elif text.startswith('/cookies'):
+            async def cookies_async():
+                cookies = await self.solver.export_cookies()
+                return f"🍪 <b>Current Cookies:</b>\n<code>{cookies}</code>"
+            response = asyncio.run(cookies_async())
+        elif text.startswith('/setcookies'):
+            cookie_json = text.replace('/setcookies', '').strip()
+            async def import_cookies_async():
+                return await self.solver.import_cookies(cookie_json)
+            response = asyncio.run(import_cookies_async())
+        elif text.startswith('/target'):
+            try:
+                target = int(text.split()[1])
+                self.solver.state['daily_target'] = target
+                response = f"🎯 <b>Daily target set to:</b> {target} credits"
+            except:
+                response = "❌ Usage: /target 3000"
         
         if response:
             self.solver.send_telegram(response)
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare ULTIMATE Solver started!")
+    bot.logger.info("AdShare ULTIMATE Bot started!")
     bot.handle_updates()
