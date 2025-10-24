@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AdShare ULTIMATE BOT - Simplified
-✅ Random Restart (6-7 AM) ✅ Pause/Resume Commands
-✅ uBlock Origin ✅ Core Features Only
+AdShare ULTIMATE Bot - uBlock Origin Focus
+✅ Ultimate Login ✅ Game Solving ✅ Anti-Bot ✅ Telegram Control
+✅ Daily Reset/Restart ✅ uBlock with Fallbacks
 """
 
 import os
@@ -50,12 +50,12 @@ CONFIG = {
 class UltimateAdshareBot:
     def __init__(self):
         self.playwright = None
-        self.browser = None
+        self.context = None
         self.page = None
         self.telegram_chat_id = None
         self.profile_dir = "/tmp/firefox_profile"
+        self.ublock_method = "none"
         
-        # State Management
         self.state = {
             'is_running': False,
             'is_paused': False,
@@ -70,36 +70,30 @@ class UltimateAdshareBot:
             'games_solved_today': 0,
             'start_time': time.time(),
             'next_restart_time': self.get_random_restart_time(),
+            'browser_retries': 0,
+            'max_browser_retries': 3,
         }
         
-        self.solver_thread = None
         self.setup_logging()
         self.setup_telegram()
     
     def get_random_restart_time(self):
-        """Get random restart time between 6-7 AM"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         today = now_ist.date()
-        
         restart_min, restart_max = CONFIG['restart_time_range']
         min_time = datetime.datetime.strptime(restart_min, "%H:%M").time()
         max_time = datetime.datetime.strptime(restart_max, "%H:%M").time()
-        
         min_minutes = min_time.hour * 60 + min_time.minute
         max_minutes = max_time.hour * 60 + max_time.minute
         random_minutes = random.randint(min_minutes, max_minutes)
-        
         random_hour = random_minutes // 60
         random_minute = random_minutes % 60
-        
         random_time = datetime.datetime.combine(today, datetime.time(random_hour, random_minute))
         if random_time < now_ist:
             random_time += datetime.timedelta(days=1)
-        
         return random_time
 
     def setup_logging(self):
-        """Setup logging"""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -108,7 +102,6 @@ class UltimateAdshareBot:
         self.logger = logging.getLogger(__name__)
     
     def setup_telegram(self):
-        """Setup Telegram bot"""
         try:
             self.logger.info("Setting up Telegram bot...")
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getUpdates"
@@ -128,10 +121,8 @@ class UltimateAdshareBot:
             return False
     
     def send_telegram(self, text, parse_mode='HTML'):
-        """Send message to Telegram"""
         if not self.telegram_chat_id:
             return False
-        
         try:
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage"
             payload = {
@@ -146,14 +137,11 @@ class UltimateAdshareBot:
             return False
 
     async def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram"""
         if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
-        
         try:
             screenshot_path = "/tmp/screenshot.png"
             await self.page.screenshot(path=screenshot_path)
-            
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             with open(screenshot_path, 'rb') as photo:
                 files = {'photo': photo}
@@ -162,32 +150,54 @@ class UltimateAdshareBot:
                     'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
                 }
                 response = requests.post(url, files=files, data=data, timeout=30)
-            
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
-                
             return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
     async def setup_playwright(self):
-        """Setup Playwright with uBlock Origin"""
         self.logger.info("Setting up Playwright with uBlock...")
-        
         try:
             self.playwright = await async_playwright().start()
-            
             profile_dir = self.profile_dir
-            extensions_dir = os.path.join(profile_dir, "extensions")
-            os.makedirs(extensions_dir, exist_ok=True)
+            os.makedirs(profile_dir, exist_ok=True)
             
+            # Primary: Install uBlock via profile
             ublock_xpi_path = CONFIG['ublock_path']
             if os.path.exists(ublock_xpi_path):
+                extensions_dir = os.path.join(profile_dir, "extensions")
+                os.makedirs(extensions_dir, exist_ok=True)
                 ublock_dest = os.path.join(extensions_dir, "uBlock0@raymondhill.net.xpi")
                 shutil.copy(ublock_xpi_path, ublock_dest)
-                self.logger.info("uBlock Origin copied to Firefox profile")
+                # Create user.js to force-enable extensions
+                user_js_path = os.path.join(profile_dir, "user.js")
+                with open(user_js_path, 'w') as f:
+                    f.write("""
+user_pref("extensions.autoDisableScopes", 0);
+user_pref("extensions.enabledScopes", 15);
+user_pref("xpinstall.signatures.required", false);
+                    """)
+                self.logger.info("uBlock Origin copied to Firefox profile with user.js")
+                self.ublock_method = "primary"
             else:
-                self.logger.warning("uBlock Origin .xpi not found, launching without extension")
+                self.logger.warning("uBlock Origin .xpi not found, trying fallback...")
+            
+            # Fallback 1: JavaScript ad-blocker
+            if self.ublock_method == "none":
+                self.logger.info("Using JavaScript ad-blocker fallback")
+                async def block_ads(route, request):
+                    ad_domains = ['doubleclick.net', 'googlesyndication.com', 'adservice.google.com', 'adsbygoogle']
+                    if any(domain in request.url for domain in ad_domains):
+                        await route.abort()
+                    else:
+                        await route.continue_()
+                self.ublock_method = "js_blocker"
+            
+            # Fallback 2: DOM-based ad hiding
+            if self.ublock_method == "none":
+                self.logger.info("Using DOM-based ad hiding fallback")
+                self.ublock_method = "dom_hiding"
             
             launch_args = ['--headless=new']
             context_options = {
@@ -197,44 +207,69 @@ class UltimateAdshareBot:
                 'bypass_csp': True
             }
             
-            context = await self.playwright.firefox.launch_persistent_context(
+            self.context = await self.playwright.firefox.launch_persistent_context(
                 user_data_dir=profile_dir,
                 headless=True,
                 args=launch_args,
-                timeout=300000,
+                timeout=60000,
                 **context_options
             )
             
-            self.page = await context.new_page()
-            self.page.set_default_timeout(30000)
-            self.page.set_default_navigation_timeout(45000)
+            self.page = await self.context.new_page()
+            self.page.set_default_timeout(20000)
+            self.page.set_default_navigation_timeout(60000)
             
-            self.logger.info("Playwright started successfully!")
+            # Apply JS blocker if needed
+            if self.ublock_method == "js_blocker":
+                await self.page.route("**/*", block_ads)
+            
+            # Apply DOM hiding if needed
+            if self.ublock_method == "dom_hiding":
+                await self.page.evaluate("""
+                    () => {
+                        const adSelectors = [
+                            '.adsbygoogle',
+                            '.banner',
+                            '.video-ads',
+                            '.ytp-ad-overlay-container',
+                            '[id*="ad-"]',
+                            '[class*="ad-"]'
+                        ];
+                        const observer = new MutationObserver(() => {
+                            adSelectors.forEach(selector => {
+                                document.querySelectorAll(selector).forEach(el => {
+                                    el.style.display = 'none';
+                                    el.remove();
+                                });
+                            });
+                        });
+                        observer.observe(document.body, { childList: true, subtree: true });
+                    }
+                """)
+            
+            self.logger.info(f"Playwright started successfully with uBlock method: {self.ublock_method}")
             return True
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
+            self.ublock_method = "none"
             return False
 
     async def smart_delay_async(self, min_delay=None, max_delay=None):
-        """Async version of smart delay"""
         if min_delay is None:
             min_delay = CONFIG['min_delay']
         if max_delay is None:
             max_delay = CONFIG['max_delay']
-        
         delay = random.uniform(min_delay, max_delay)
         await asyncio.sleep(delay)
         return delay
 
     async def take_short_break(self):
-        """Take a short break"""
         break_duration = random.randint(*CONFIG['short_break_duration'])
         self.logger.info(f"☕ Taking short break: {break_duration}s")
         self.send_telegram(f"☕ <b>Short Break</b>\n⏰ {break_duration} seconds")
         await asyncio.sleep(break_duration)
 
     async def take_meal_break(self):
-        """Take a meal break"""
         break_duration = random.randint(*CONFIG['meal_break_duration'])
         minutes = break_duration // 60
         self.logger.info(f"🍔 Taking meal break: {minutes}min")
@@ -242,7 +277,6 @@ class UltimateAdshareBot:
         await asyncio.sleep(break_duration)
 
     async def take_long_break(self):
-        """Take a long break"""
         break_duration = random.randint(*CONFIG['long_break_duration'])
         hours = break_duration // 3600
         self.logger.info(f"🌙 Taking long break: {hours}h")
@@ -250,22 +284,18 @@ class UltimateAdshareBot:
         await asyncio.sleep(break_duration)
 
     def is_night_time(self):
-        """Check if it's night time (10PM-6AM IST)"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         return now_ist.hour in CONFIG['night_hours']
 
     def should_restart_now(self):
-        """Check if it's time to restart based on random schedule"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         return now_ist >= self.state['next_restart_time']
 
     def pause(self):
-        """Pause the solver"""
         if not self.state['is_running']:
             return "❌ Solver is not running"
         if self.state['is_paused']:
             return "⏸️ Solver is already paused"
-        
         self.state['is_paused'] = True
         self.state['status'] = 'paused'
         self.logger.info("Solver paused")
@@ -273,12 +303,10 @@ class UltimateAdshareBot:
         return "✅ Solver paused successfully!"
 
     def resume(self):
-        """Resume the solver"""
         if not self.state['is_running']:
             return "❌ Solver is not running"
         if not self.state['is_paused']:
             return "▶️ Solver is already running"
-        
         self.state['is_paused'] = False
         self.state['status'] = 'running'
         self.logger.info("Solver resumed")
@@ -286,12 +314,10 @@ class UltimateAdshareBot:
         return "✅ Solver resumed successfully!"
 
     async def ultimate_login(self):
-        """ULTIMATE LOGIN WITH 12+ METHODS"""
         try:
             self.logger.info("🚀 STARTING ULTIMATE LOGIN (12+ METHODS)...")
-            login_url = "https://adsha.re/login"
-            await self.page.goto(login_url, wait_until='networkidle')
-            await self.page.wait_for_selector("body")
+            await self.page.goto("https://adsha.re/login", wait_until='networkidle', timeout=60000)
+            await self.page.wait_for_selector("body", timeout=20000)
             await self.smart_delay_async()
             
             page_content = await self.page.content()
@@ -451,7 +477,7 @@ class UltimateAdshareBot:
             await self.smart_delay_async()
             await asyncio.sleep(8)
             
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=60000)
             await self.smart_delay_async()
             
             final_url = self.page.url.lower()
@@ -474,22 +500,18 @@ class UltimateAdshareBot:
             return False
 
     async def check_daily_reset(self):
-        """Check if daily reset is needed"""
         try:
             now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
             current_date = now_ist.date().isoformat()
-            
             if current_date != self.state['last_reset_date']:
                 reset_time = datetime.datetime.strptime(CONFIG['reset_time_ist'], "%H:%M").time()
                 current_time = now_ist.time()
-                
                 if current_time >= reset_time:
                     old_credits = self.state['credits_earned_today']
                     self.state['credits_earned_today'] = 0
                     self.state['games_solved_today'] = 0
                     self.state['last_reset_date'] = current_date
                     self.state['next_restart_time'] = self.get_random_restart_time()
-                    
                     self.logger.info(f"💰 Daily reset completed! Previous: {old_credits}, New target: {self.state['daily_target']}")
                     self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits\n💰 Yesterday: {old_credits} credits")
                     return True
@@ -499,17 +521,12 @@ class UltimateAdshareBot:
             return False
 
     def is_browser_alive(self):
-        """Check if browser is alive"""
         try:
-            return (self.page and 
-                   not self.page.is_closed() and 
-                   self.browser and 
-                   self.browser.is_connected())
+            return self.page and not self.page.is_closed()
         except Exception:
             return False
 
     async def ensure_correct_page(self):
-        """Ensure we're on the correct surf page"""
         if not self.is_browser_alive():
             self.logger.error("Browser dead during page check")
             return False
@@ -520,16 +537,17 @@ class UltimateAdshareBot:
                 return await self.ultimate_login()
             if "surf" not in current_url and "adsha.re" in current_url:
                 self.logger.info("Redirecting to surf page...")
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await self.page.evaluate("window.close()")  # Close any popups
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=60000)
                 await self.smart_delay_async()
                 return True
+            await self.page.evaluate("window.close()")  # Close any popups
             return True
         except Exception as e:
             self.logger.error(f"Page navigation error: {e}")
             return False
 
     def calculate_similarity(self, str1, str2):
-        """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
             return 0.0
         common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
@@ -537,18 +555,14 @@ class UltimateAdshareBot:
         return common_chars / max_len if max_len > 0 else 0.0
 
     async def compare_symbols(self, question_svg, answer_svg):
-        """Compare SVG symbols - 0.1% failure rate"""
         try:
             question_content = await question_svg.inner_html()
             answer_content = await answer_svg.inner_html()
-            
             if not question_content or not answer_content:
                 return {'match': False, 'confidence': 0.0, 'exact': False}
-            
             if random.random() < CONFIG['natural_failure_rate']:
                 self.logger.info("🤖 0.1% intentional human-like failure")
                 return {'match': False, 'confidence': 0.0, 'exact': False}
-            
             def clean_svg(svg_text):
                 cleaned = re.sub(r'\s+', ' ', svg_text).strip().lower()
                 cleaned = re.sub(r'fill:#[a-f0-9]+', '', cleaned, flags=re.IGNORECASE)
@@ -556,13 +570,10 @@ class UltimateAdshareBot:
                 cleaned = re.sub(r'style="[^"]*"', '', cleaned)
                 cleaned = re.sub(r'class="[^"]*"', '', cleaned)
                 return cleaned
-            
             clean_question = clean_svg(question_content)
             clean_answer = clean_svg(answer_content)
-            
             if clean_question == clean_answer:
                 return {'match': True, 'confidence': 1.0, 'exact': True}
-            
             similarity = self.calculate_similarity(clean_question, clean_answer)
             should_match = similarity >= 0.90
             return {'match': should_match, 'confidence': similarity, 'exact': False}
@@ -571,11 +582,9 @@ class UltimateAdshareBot:
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
     async def find_best_match(self, question_svg, links):
-        """Find best matching symbol"""
         best_match = None
         highest_confidence = 0
         exact_matches = []
-        
         for link in links:
             try:
                 answer_svg = await link.query_selector("svg")
@@ -596,7 +605,6 @@ class UltimateAdshareBot:
                         }
             except:
                 continue
-        
         if exact_matches:
             return exact_matches[0]
         if best_match and best_match['confidence'] >= 0.90:
@@ -604,36 +612,31 @@ class UltimateAdshareBot:
         return None
 
     async def solve_symbol_game(self):
-        """Main game solving logic"""
         if not self.state['is_running'] or self.state['is_paused']:
             return False
         if not self.is_browser_alive():
             self.logger.error("Browser dead during game solving")
             return False
-        
         try:
+            await self.page.evaluate("window.close()")  # Close any popups
             if not await self.ensure_correct_page():
                 self.logger.info("Not on correct page, redirecting...")
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle', timeout=60000)
                 if not await self.ensure_correct_page():
                     return False
-            
-            question_svg = await self.page.wait_for_selector("svg", timeout=15000)
+            question_svg = await self.page.wait_for_selector("svg", timeout=20000)
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
-            
             links = await self.page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
             if not links:
                 self.logger.info("No answer links found")
                 return False
-            
             best_match = await self.find_best_match(question_svg, links)
             if best_match:
                 if random.random() < 0.15:  # 15% chance to hesitate
                     hesitation = random.uniform(0.5, 2.0)
                     await asyncio.sleep(hesitation)
-                
                 await best_match['link'].click()
                 self.state['total_solved'] += 1
                 self.state['credits_earned_today'] += 1
@@ -641,11 +644,9 @@ class UltimateAdshareBot:
                 self.state['consecutive_fails'] = 0
                 match_type = "EXACT" if best_match['exact'] else "FUZZY"
                 self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}")
-                
                 if self.state['credits_earned_today'] >= self.state['daily_target']:
                     self.logger.info(f"🎯 Daily target reached! {self.state['credits_earned_today']}/{self.state['daily_target']}")
                     self.send_telegram(f"🎯 <b>Daily Target Reached!</b>\n💰 {self.state['credits_earned_today']}/{self.state['daily_target']} credits")
-                
                 return True
             else:
                 self.logger.info("No good match found")
@@ -657,19 +658,16 @@ class UltimateAdshareBot:
             return False
 
     def handle_consecutive_failures(self):
-        """Handle consecutive failures"""
         self.state['consecutive_fails'] += 1
         current_fails = self.state['consecutive_fails']
-        
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         if not self.is_browser_alive():
             return
-        
         if current_fails >= CONFIG['refresh_page_after_failures']:
             self.logger.info("Refreshing page...")
             self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
             try:
-                asyncio.create_task(self.page.reload())
+                asyncio.create_task(self.page.reload(timeout=60000))
                 self.state['consecutive_fails'] = 0
             except Exception as e:
                 self.logger.error(f"Page refresh failed: {e}")
@@ -679,26 +677,30 @@ class UltimateAdshareBot:
             self.stop()
 
     async def solver_loop(self):
-        """Main solving loop"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
-        
-        if not await self.setup_playwright():
-            self.logger.error("Cannot start - Playwright setup failed")
-            self.stop()
-            return
-        
-        if not await self.ultimate_login():
-            self.logger.error("Cannot start - Login failed")
-            self.stop()
-            return
-        
-        consecutive_fails = 0
-        cycle_count = 0
-        games_solved = 0
-        
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
+                if not self.is_browser_alive():
+                    self.state['browser_retries'] += 1
+                    if self.state['browser_retries'] > self.state['max_browser_retries']:
+                        self.logger.error("Max browser retries reached, stopping...")
+                        self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nMax browser retries reached")
+                        self.stop()
+                        break
+                    self.logger.info(f"Browser dead, retrying ({self.state['browser_retries']}/{self.state['max_browser_retries']})...")
+                    await self.cleanup_playwright()
+                    if not await self.setup_playwright():
+                        self.logger.error("Cannot restart - Playwright setup failed")
+                        self.stop()
+                        break
+                    if not await self.ultimate_login():
+                        self.logger.error("Cannot restart - Login failed")
+                        self.stop()
+                        break
+                    self.state['browser_retries'] = 0
+                    continue
+                
                 if self.state['is_paused']:
                     await asyncio.sleep(10)
                     continue
@@ -709,24 +711,12 @@ class UltimateAdshareBot:
                     await self.perform_restart()
                     continue
                 
-                if not self.is_browser_alive():
-                    self.logger.error("Browser dead, stopping solver")
-                    self.stop()
-                    break
+                await self.check_daily_reset()
                 
-                reset_occurred = await self.check_daily_reset()
-                if reset_occurred:
-                    games_solved = 0
-                
-                if cycle_count % 30 == 0 and cycle_count > 0:
-                    await self.page.reload()
-                    self.logger.info("Page refreshed")
-                    await asyncio.sleep(5)
-                
-                if games_solved > 0:
-                    if games_solved % random.randint(*CONFIG['short_break_frequency']) == 0:
+                if self.state['games_solved_today'] > 0:
+                    if self.state['games_solved_today'] % random.randint(*CONFIG['short_break_frequency']) == 0:
                         await self.take_short_break()
-                    if games_solved % random.randint(*CONFIG['meal_break_frequency']) == 0:
+                    if self.state['games_solved_today'] % random.randint(*CONFIG['meal_break_frequency']) == 0:
                         await self.take_meal_break()
                     if random.random() < CONFIG['long_break_chance']:
                         await self.take_long_break()
@@ -737,80 +727,61 @@ class UltimateAdshareBot:
                 
                 game_solved = await self.solve_symbol_game()
                 if game_solved:
-                    games_solved += 1
-                    consecutive_fails = 0
+                    self.state['games_solved_today'] += 1
+                    self.state['consecutive_fails'] = 0
                     await self.smart_delay_async()
                 else:
-                    consecutive_fails += 1
+                    self.state['consecutive_fails'] += 1
                     await asyncio.sleep(5)
-                
-                cycle_count += 1
             except Exception as e:
                 self.logger.error(f"Loop error: {e}")
-                consecutive_fails += 1
+                self.state['consecutive_fails'] += 1
                 await asyncio.sleep(10)
         
         if self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
             self.logger.error("Too many failures, stopping...")
+            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
             self.stop()
 
     async def perform_restart(self):
-        """Perform a complete restart"""
         self.logger.info("Performing scheduled restart...")
         current_credits = self.state['credits_earned_today']
         current_target = self.state['daily_target']
-        
         await self.cleanup_playwright()
-        
         self.state['is_running'] = True
         self.state['is_paused'] = False
         self.state['consecutive_fails'] = 0
+        self.state['browser_retries'] = 0
         self.state['credits_earned_today'] = current_credits
         self.state['daily_target'] = current_target
         self.state['next_restart_time'] = self.get_random_restart_time()
-        
         await self.solver_loop()
 
     async def cleanup_playwright(self):
-        """Cleanup Playwright resources"""
         try:
-            if self.page:
+            if self.page and not self.page.is_closed():
                 await self.page.close()
-            if self.browser:
-                await self.browser.close()
+            if self.context:
+                await self.context.close()
             if self.playwright:
                 await self.playwright.stop()
             self.page = None
-            self.browser = None
+            self.context = None
             self.playwright = None
+            self.ublock_method = "none"
+            self.logger.info("Playwright cleaned up successfully")
         except Exception as e:
             self.logger.warning(f"Playwright cleanup warning: {e}")
 
     def start(self):
-        """Start the solver"""
         if self.state['is_running']:
             return "❌ Solver already running"
-        
         self.state['is_running'] = True
         self.state['is_paused'] = False
         self.state['consecutive_fails'] = 0
+        self.state['browser_retries'] = 0
         self.state['start_time'] = time.time()
         self.state['next_restart_time'] = self.get_random_restart_time()
-        
-        def run_solver():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(self.solver_loop())
-            except Exception as e:
-                self.logger.error(f"Solver loop error: {e}")
-            finally:
-                loop.run_until_complete(self.cleanup_playwright())
-                loop.close()
-        
-        self.solver_thread = threading.Thread(target=run_solver)
-        self.solver_thread.daemon = True
-        self.solver_thread.start()
         
         restart_time = self.state['next_restart_time'].strftime("%H:%M IST")
         self.logger.info(f"ULTIMATE solver started successfully! Next restart: {restart_time}")
@@ -818,51 +789,29 @@ class UltimateAdshareBot:
         return f"✅ ULTIMATE solver started successfully!\n⏰ Next restart: {restart_time}"
 
     def stop(self):
-        """Stop the solver"""
         self.state['is_running'] = False
         self.state['is_paused'] = False
         self.state['status'] = 'stopped'
-        
-        async def close_playwright():
-            await self.cleanup_playwright()
-        
-        def run_cleanup():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(close_playwright())
-            finally:
-                loop.close()
-        
-        cleanup_thread = threading.Thread(target=run_cleanup)
-        cleanup_thread.daemon = True
-        cleanup_thread.start()
-        
+        asyncio.run(self.cleanup_playwright())
         self.logger.info("ULTIMATE solver stopped")
         self.send_telegram("🛑 <b>ULTIMATE Solver Stopped!</b>")
         return "✅ ULTIMATE solver stopped successfully!"
 
     def status(self):
-        """Get status"""
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         reset_time = datetime.datetime.strptime(CONFIG['reset_time_ist'], "%H:%M").time()
         next_reset = datetime.datetime.combine(now_ist.date(), reset_time)
         if now_ist.time() > reset_time:
             next_reset += datetime.timedelta(days=1)
-        
         time_until_reset = next_reset - now_ist
         hours, remainder = divmod(time_until_reset.seconds, 3600)
         minutes = remainder // 60
-        
         runtime = time.time() - self.state['start_time']
         hours_running = max(1, runtime / 3600)
         hourly_rate = self.state['games_solved_today'] / hours_running
-        
         next_restart = self.state['next_restart_time'].strftime("%H:%M IST")
-        
         status_icon = "⏸️" if self.state['is_paused'] else "🔄"
         status_text = "paused" if self.state['is_paused'] else self.state['status']
-        
         return f"""
 📊 <b>Status Report</b>
 ⏰ {now_ist.strftime('%H:%M:%S IST')}
@@ -875,6 +824,7 @@ class UltimateAdshareBot:
 🔄 Next Restart: {next_restart}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🛡️ uBlock: {self.ublock_method}
         """
 
 class TelegramBot:
@@ -884,7 +834,6 @@ class TelegramBot:
         self.last_update_id = None
     
     def handle_updates(self):
-        """Handle Telegram updates"""
         self.logger.info("Starting Telegram bot...")
         while True:
             try:
@@ -892,7 +841,6 @@ class TelegramBot:
                 params = {'timeout': 30}
                 if self.last_update_id:
                     params['offset'] = self.last_update_id + 1
-                
                 response = requests.get(url, params=params, timeout=35)
                 if response.status_code == 200:
                     updates = response.json()
@@ -908,16 +856,12 @@ class TelegramBot:
                 time.sleep(5)
     
     def process_message(self, update):
-        """Process Telegram message"""
         if 'message' not in update or 'text' not in update['message']:
             return
-        
         chat_id = update['message']['chat']['id']
         text = update['message']['text']
-        
         if not self.solver.telegram_chat_id:
             self.solver.telegram_chat_id = chat_id
-        
         response = ""
         if text.startswith('/start'):
             response = self.solver.start()
@@ -942,20 +886,19 @@ class TelegramBot:
 /target [number] - Set daily target
 /help - Show help
 
-🎯 <b>ULTIMATE FEATURES</b>
+🎯 <b>Features</b>
 🔐 12+ login methods
-🛡️ uBlock Origin
-🎯 Daily targets
+🛡️ uBlock Origin with fallbacks
+🎯 Game solving with 99.9% success
 📊 24/7 operation
-⏰ Smart break system
-🎯 99.9% success rate
-🔄 Auto-restart (6-7 AM)
+⏰ Breaks (short, meal, long)
+🌙 Night slowdown
+🔄 Daily reset (5:30 AM IST)
+🔄 Random restart (6-7 AM IST)
 ⏸️ Pause/Resume control
             """
         elif text.startswith('/screenshot'):
-            async def screenshot_async():
-                return await self.solver.send_screenshot()
-            response = asyncio.run(screenshot_async())
+            response = asyncio.run(self.solver.send_screenshot())
         elif text.startswith('/target'):
             try:
                 target = int(text.split()[1])
@@ -963,11 +906,17 @@ class TelegramBot:
                 response = f"🎯 <b>Daily target set to:</b> {target} credits"
             except:
                 response = "❌ Usage: /target 3000"
-        
         if response:
             self.solver.send_telegram(response)
 
-if __name__ == '__main__':
+async def main():
     bot = TelegramBot()
     bot.logger.info("AdShare ULTIMATE Bot started!")
-    bot.handle_updates()
+    # Run Telegram polling in a separate thread
+    telegram_thread = threading.Thread(target=bot.handle_updates, daemon=True)
+    telegram_thread.start()
+    # Run solver in main thread
+    await bot.solver.solver_loop()
+
+if __name__ == '__main__':
+    asyncio.run(main())
