@@ -784,8 +784,8 @@ class CreditGoalSolver:
                     self.state['total_solved'] += 1
                     self.state['consecutive_fails'] = 0
                     
-                    # Track credits earned (4 credits per game)
-                    target_reached = self.update_credits_earned(4)
+                    # Track credits earned (1 credits per game)
+                    target_reached = self.update_credits_earned(1)
                     
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
                     self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}, Credits: {self.state['credits_earned_today']}")
