@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Playwright Edition
-FIXED WITH HUMAN-LIKE BEHAVIOR AND SCREENSHOTS
+SIMPLIFIED & WORKING VERSION
 """
 
 import os
@@ -40,6 +40,7 @@ class PlaywrightSymbolGameSolver:
         self.page = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
+        self.loop = None
         
         # State Management
         self.state = {
@@ -78,7 +79,7 @@ class PlaywrightSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Human-like Playwright!</b>")
+                    self.send_telegram("🤖 <b>AdShare Solver Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -103,14 +104,22 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    async def send_screenshot_async(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram - ASYNC VERSION"""
+    def send_screenshot(self):
+        """Send screenshot to Telegram - SIMPLE SYNC VERSION"""
         if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
             screenshot_path = "/tmp/screenshot.png"
-            await self.page.screenshot(path=screenshot_path)
+            # Use existing loop or create new one
+            try:
+                loop = asyncio.get_event_loop()
+            except:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Take screenshot
+            loop.run_until_complete(self.page.screenshot(path=screenshot_path))
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
@@ -118,7 +127,7 @@ class PlaywrightSymbolGameSolver:
                 files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
+                    'caption': f'🖥️ Screenshot - {time.strftime("%H:%M:%S")}'
                 }
                 
                 response = requests.post(url, files=files, data=data, timeout=30)
@@ -131,78 +140,36 @@ class PlaywrightSymbolGameSolver:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Sync wrapper for screenshot"""
-        try:
-            if self.page and self.telegram_chat_id:
-                result = asyncio.run(self.send_screenshot_async(caption))
-                return result
-            else:
-                return "❌ Browser not running or Telegram not configured"
-        except Exception as e:
-            return f"❌ Screenshot error: {str(e)}"
-
     async def setup_playwright(self):
-        """Setup Playwright with HUMAN-LIKE settings"""
-        self.logger.info("Starting Playwright with human-like behavior...")
+        """Setup Playwright - SIMPLE AND RELIABLE"""
+        self.logger.info("Starting Playwright...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            # REAL USER AGENTS to avoid detection
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0"
-            ]
-            
-            user_agent = random.choice(user_agents)
-            
-            # Launch with human-like settings
+            # Simple Firefox launch
             self.browser = await self.playwright.firefox.launch(
                 headless=True,
                 args=[
                     '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-blink-features=AutomationControlled',  # Hide automation
-                    '--disable-features=VizDisplayCompositor',
                 ]
             )
             
-            # Create context with human-like settings
+            # Create context with real user agent
             context = await self.browser.new_context(
-                viewport={'width': 1920, 'height': 1080},  # Desktop resolution
-                user_agent=user_agent,
-                java_script_enabled=True,
-                has_touch=False,
-                is_mobile=False,
-                # Extra headers to look human
-                extra_http_headers={
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                }
+                viewport={'width': 1280, 'height': 720},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
-            
-            # Remove webdriver property
-            await context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
-                });
-            """)
             
             self.page = await context.new_page()
             
-            # Set human-like timeouts
+            # Set reasonable timeouts
             self.page.set_default_timeout(30000)
             self.page.set_default_navigation_timeout(45000)
             
-            self.logger.info(f"Playwright started with user agent: {user_agent[:50]}...")
+            self.logger.info("Playwright started successfully!")
             return True
             
         except Exception as e:
@@ -291,9 +258,13 @@ class PlaywrightSymbolGameSolver:
             self.logger.error("Login failed")
             return False
 
-    def human_delay(self, min_seconds=1, max_seconds=3):
-        """Human-like randomized delay"""
-        delay = random.uniform(min_seconds, max_seconds)
+    def smart_delay(self):
+        """Randomized delay between actions"""
+        if CONFIG['random_delay']:
+            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
+        else:
+            delay = CONFIG['base_delay']
+        
         time.sleep(delay)
         return delay
 
@@ -316,7 +287,7 @@ class PlaywrightSymbolGameSolver:
                 self.logger.info("Redirecting to surf page...")
                 await self.page.goto("https://adsha.re/surf")
                 await self.page.wait_for_selector("body")
-                self.human_delay()
+                self.smart_delay()
                 
                 # Check if redirected to login
                 if "login" in self.page.url.lower():
@@ -328,7 +299,7 @@ class PlaywrightSymbolGameSolver:
                 self.logger.info("Navigating to AdShare...")
                 await self.page.goto("https://adsha.re/surf")
                 await self.page.wait_for_selector("body")
-                self.human_delay()
+                self.smart_delay()
                 return True
             
             return True
@@ -337,21 +308,20 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Page navigation error: {e}")
             return False
 
-    # ==================== FIXED LOGIN METHOD ====================
+    # ==================== SIMPLE LOGIN METHOD ====================
     async def force_login(self):
-        """FIXED LOGIN - HUMAN-LIKE BEHAVIOR WITH SCREENSHOTS"""
+        """SIMPLE LOGIN - JUST CLICK THE BUTTON"""
         try:
-            self.logger.info("LOGIN: Attempting human-like login...")
-            
-            # Send starting screenshot
-            await self.send_screenshot_async("🔐 Login Starting")
+            self.logger.info("LOGIN: Attempting login...")
             
             login_url = "https://adsha.re/login"
             await self.page.goto(login_url)
             await self.page.wait_for_selector("body")
             
-            self.human_delay(2, 4)
-            await self.send_screenshot_async("📄 Login Page Loaded")
+            await asyncio.sleep(2)
+            
+            # Take screenshot before login
+            self.send_screenshot()
             
             page_source = await self.page.content()
             soup = BeautifulSoup(page_source, 'html.parser')
@@ -359,7 +329,6 @@ class PlaywrightSymbolGameSolver:
             form = soup.find('form', {'name': 'login'})
             if not form:
                 self.logger.error("LOGIN: No login form found")
-                await self.send_screenshot_async("❌ No Login Form Found")
                 return False
             
             password_field_name = None
@@ -373,140 +342,43 @@ class PlaywrightSymbolGameSolver:
             
             if not password_field_name:
                 self.logger.error("LOGIN: No password field found")
-                await self.send_screenshot_async("❌ No Password Field Found")
                 return False
             
             self.logger.info(f"Password field: {password_field_name}")
             
-            # Fill email with human-like typing
-            email_selectors = [
-                "input[name='mail']",
-                "input[type='email']",
-                "input[placeholder*='email' i]"
-            ]
+            # Fill email
+            await self.page.fill("input[name='mail']", CONFIG['email'])
+            self.logger.info("Email entered")
+            await asyncio.sleep(1)
             
-            email_filled = False
-            for selector in email_selectors:
-                try:
-                    # Click the field first (human behavior)
-                    await self.page.click(selector)
-                    self.human_delay(0.5, 1)
-                    
-                    # Clear field (human behavior)
-                    await self.page.fill(selector, "")
-                    self.human_delay(0.2, 0.5)
-                    
-                    # Type email character by character (human-like)
-                    for char in CONFIG['email']:
-                        await self.page.type(selector, char, delay=random.uniform(50, 150))
-                    
-                    self.logger.info("Email entered (human-like)")
-                    email_filled = True
-                    
-                    await self.send_screenshot_async("📧 Email Entered")
-                    break
-                except:
-                    continue
-            
-            if not email_filled:
-                await self.send_screenshot_async("❌ Email Entry Failed")
-                return False
-            
-            self.human_delay(1, 2)
-            
-            # Fill password with human-like typing
+            # Fill password
             password_selector = f"input[name='{password_field_name}']"
+            await self.page.fill(password_selector, CONFIG['password'])
+            self.logger.info("Password entered")
+            await asyncio.sleep(1)
+            
+            # Take screenshot after filling credentials
+            self.send_screenshot()
+            
+            # Click the login button
+            await self.page.click("a.button")
+            self.logger.info("Login button clicked")
+            
+            # Wait for navigation
             try:
-                # Click the password field
-                await self.page.click(password_selector)
-                self.human_delay(0.5, 1)
-                
-                # Clear field
-                await self.page.fill(password_selector, "")
-                self.human_delay(0.2, 0.5)
-                
-                # Type password character by character
-                for char in CONFIG['password']:
-                    await self.page.type(password_selector, char, delay=random.uniform(80, 200))
-                
-                self.logger.info("Password entered (human-like)")
-                
-                await self.send_screenshot_async("🔑 Password Entered")
+                await self.page.wait_for_navigation(timeout=15000)
+                self.logger.info("Navigation detected")
             except:
-                await self.send_screenshot_async("❌ Password Entry Failed")
-                return False
-            
-            self.human_delay(1, 3)
-            
-            # Click login button with human-like behavior
-            login_clicked = False
-            
-            # Try multiple button approaches
-            button_selectors = [
-                "a.button",  # Primary button
-                "a[onclick*='document.login.submit()']",
-                "button",
-                "input[type='submit']"
-            ]
-            
-            for selector in button_selectors:
-                try:
-                    element = await self.page.query_selector(selector)
-                    if element and await element.is_visible():
-                        # Move mouse to button (human-like)
-                        box = await element.bounding_box()
-                        if box:
-                            await self.page.mouse.move(
-                                box['x'] + box['width'] / 2 + random.uniform(-10, 10),
-                                box['y'] + box['height'] / 2 + random.uniform(-10, 10)
-                            )
-                            self.human_delay(0.5, 1.5)
-                        
-                        await element.click()
-                        self.logger.info(f"Login button clicked with: {selector}")
-                        login_clicked = True
-                        
-                        await self.send_screenshot_async("🖱️ Button Clicked")
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Failed with {selector}: {e}")
-                    continue
-            
-            # If button click doesn't work, try JavaScript with delay
-            if not login_clicked:
-                try:
-                    self.human_delay(1, 2)
-                    await self.page.evaluate("setTimeout(() => document.login.submit(), 1000)")
-                    self.logger.info("Form submitted via JavaScript with delay")
-                    login_clicked = True
-                    await self.send_screenshot_async("⚡ JavaScript Submission")
-                except Exception as e:
-                    self.logger.error(f"JavaScript submission failed: {e}")
-            
-            # Wait for navigation with multiple approaches
-            navigation_detected = False
-            try:
-                await self.page.wait_for_navigation(timeout=10000)
-                navigation_detected = True
-                self.logger.info("Navigation detected after login")
-            except:
-                self.logger.info("No navigation detected, waiting...")
-                self.human_delay(3, 6)
+                self.logger.info("No navigation, waiting...")
+                await asyncio.sleep(5)
             
             # Take screenshot after login attempt
-            await self.send_screenshot_async("⏳ After Login Attempt")
-            
-            # Wait a bit more for page to settle
-            self.human_delay(2, 4)
+            self.send_screenshot()
+            await asyncio.sleep(2)
             
             # Check if login was successful
             current_url = self.page.url.lower()
-            page_title = await self.page.title()
-            self.logger.info(f"Current URL after login: {current_url}")
-            self.logger.info(f"Page title: {page_title}")
-            
-            # Take final screenshot
-            await self.send_screenshot_async("🎯 Login Result")
+            self.logger.info(f"Current URL: {current_url}")
             
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("Login successful!")
@@ -514,36 +386,15 @@ class PlaywrightSymbolGameSolver:
                 await self.save_cookies()
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
-            elif "login" in current_url:
-                self.logger.error("Login failed - still on login page")
-                # Try to get error message
-                try:
-                    error_elements = await self.page.query_selector_all(".error, .alert, [class*='error'], [class*='alert']")
-                    for error in error_elements:
-                        error_text = await error.text_content()
-                        if error_text and error_text.strip():
-                            self.logger.error(f"Login error message: {error_text.strip()}")
-                            self.send_telegram(f"❌ <b>Login Error:</b> {error_text.strip()}")
-                except:
-                    pass
-                return False
             else:
-                self.logger.info(f"On unknown page after login: {current_url}")
-                # Check page content for success indicators
-                page_content = await self.page.content()
-                if "Credits" in page_content or "Welcome" in page_content or "Dashboard" in page_content:
-                    self.logger.info("Login successful based on page content!")
-                    self.state['is_logged_in'] = True
-                    await self.save_cookies()
-                    self.send_telegram("✅ <b>Login Successful!</b>")
-                    return True
-                else:
-                    self.logger.error("Login failed - unknown page without success indicators")
-                    return False
+                self.logger.error("Login failed")
+                # Take error screenshot
+                self.send_screenshot()
+                return False
                 
         except Exception as e:
             self.logger.error(f"Login error: {e}")
-            await self.send_screenshot_async("💥 Login Error")
+            self.send_screenshot()
             return False
 
     # ==================== GAME SOLVING METHODS ====================
@@ -695,7 +546,7 @@ class PlaywrightSymbolGameSolver:
             
             try:
                 asyncio.run(self.page.reload())
-                self.human_delay()
+                self.smart_delay()
                 self.logger.info("Page refreshed")
                 self.state['consecutive_fails'] = 0
             except Exception as e:
@@ -845,9 +696,14 @@ class PlaywrightSymbolGameSolver:
         
         # Run async loop in thread
         def run_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.solver_loop())
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            try:
+                self.loop.run_until_complete(self.solver_loop())
+            except Exception as e:
+                self.logger.error(f"Solver loop error: {e}")
+            finally:
+                self.loop.close()
         
         self.solver_thread = threading.Thread(target=run_async)
         self.solver_thread.daemon = True
@@ -857,36 +713,54 @@ class PlaywrightSymbolGameSolver:
             def run_monitoring():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.monitoring_loop())
+                try:
+                    loop.run_until_complete(self.monitoring_loop())
+                except Exception as e:
+                    self.logger.error(f"Monitoring loop error: {e}")
+                finally:
+                    loop.close()
             
             self.monitoring_thread = threading.Thread(target=run_monitoring)
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("Solver started with Human-like Playwright!")
-        self.send_telegram("🚀 <b>Solver Started with Human-like Behavior!</b>")
+        self.logger.info("Solver started successfully!")
+        self.send_telegram("🚀 <b>Solver Started!</b>")
         return "✅ Solver started successfully!"
 
     def stop(self):
-        """Stop the solver"""
+        """Stop the solver - FIXED ASYNC ISSUES"""
         self.state['is_running'] = False
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
-        if self.is_browser_alive():
-            asyncio.run(self.save_cookies())
-        
+        # Close browser properly
         if self.browser:
             try:
-                asyncio.run(self.browser.close())
-            except:
-                pass
+                # Use existing loop or create new one
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If loop is running, use run_coroutine_threadsafe
+                        future = asyncio.run_coroutine_threadsafe(self.browser.close(), loop)
+                        future.result(timeout=10)
+                    else:
+                        loop.run_until_complete(self.browser.close())
+                except:
+                    # Create new loop if none exists
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self.browser.close())
+                    loop.close()
+            except Exception as e:
+                self.logger.warning(f"Browser close failed: {e}")
         
+        # Close playwright
         if self.playwright:
             try:
-                asyncio.run(self.playwright.stop())
-            except:
-                pass
+                self.playwright.stop()
+            except Exception as e:
+                self.logger.warning(f"Playwright stop failed: {e}")
         
         self.logger.info("Solver stopped")
         self.send_telegram("🛑 <b>Solver Stopped!</b>")
@@ -955,8 +829,14 @@ class TelegramBot:
         elif text.startswith('/credits'):
             async def get_credits():
                 return await self.solver.extract_credits()
-            credits = asyncio.run(get_credits())
-            response = f"💰 <b>Credits:</b> {credits}"
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                credits = loop.run_until_complete(get_credits())
+                loop.close()
+                response = f"💰 <b>Credits:</b> {credits}"
+            except Exception as e:
+                response = f"❌ Error getting credits: {e}"
         elif text.startswith('/screenshot'):
             response = self.solver.send_screenshot()
         elif text.startswith('/help'):
@@ -970,11 +850,10 @@ class TelegramBot:
 /screenshot - Get screenshot
 /help - Show help
 
-💡 <b>Human-like Playwright Version</b>
-🚀 Real user agents
-⏱️ Human typing delays
-📸 Live login screenshots
-🛡️ Anti-detection measures
+💡 <b>Simplified Playwright Version</b>
+🚀 Fixed async issues
+📸 Screenshot debugging
+🦊 Real user agent
             """
         
         if response:
@@ -982,5 +861,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare Solver with Human-like Playwright started!")
+    bot.logger.info("AdShare Solver started!")
     bot.handle_updates()
