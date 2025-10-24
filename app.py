@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - Playwright Edition
-DIRECT CONVERSION FROM WORKING SELENIUM VERSION
+FIXED LOGIN VERSION
 """
 
 import os
@@ -41,7 +41,7 @@ class PlaywrightSymbolGameSolver:
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
-        # State Management (same as Selenium)
+        # State Management
         self.state = {
             'is_running': False,
             'total_solved': 0,
@@ -104,7 +104,7 @@ class PlaywrightSymbolGameSolver:
             return False
 
     def send_screenshot(self):
-        """Send screenshot to Telegram - SIMPLE SYNC VERSION"""
+        """Send screenshot to Telegram"""
         if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
@@ -133,13 +133,13 @@ class PlaywrightSymbolGameSolver:
             return f"❌ Screenshot error: {str(e)}"
 
     async def setup_playwright(self):
-        """Setup Playwright - SIMPLE AND RELIABLE"""
+        """Setup Playwright"""
         self.logger.info("Starting Playwright...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            # Simple Firefox launch (no complex settings that might break)
+            # Simple Firefox launch
             self.browser = await self.playwright.firefox.launch(
                 headless=True,
                 args=[
@@ -299,9 +299,9 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Page navigation error: {e}")
             return False
 
-    # ==================== ORIGINAL LOGIN METHOD ====================
+    # ==================== FIXED LOGIN METHOD ====================
     async def force_login(self):
-        """ORIGINAL WORKING LOGIN - DIRECT CONVERSION FROM SELENIUM"""
+        """FIXED LOGIN - WORKING BUTTON CLICK"""
         try:
             self.logger.info("LOGIN: Attempting login...")
             
@@ -309,7 +309,7 @@ class PlaywrightSymbolGameSolver:
             await self.page.goto(login_url)
             await self.page.wait_for_selector("body")
             
-            self.smart_delay()
+            await asyncio.sleep(2)
             
             page_source = await self.page.content()
             soup = BeautifulSoup(page_source, 'html.parser')
@@ -334,7 +334,7 @@ class PlaywrightSymbolGameSolver:
             
             self.logger.info(f"Password field: {password_field_name}")
             
-            # Fill email - EXACT SAME LOGIC AS SELENIUM
+            # Fill email
             email_selectors = [
                 "input[name='mail']",
                 "input[type='email']",
@@ -354,9 +354,9 @@ class PlaywrightSymbolGameSolver:
             if not email_filled:
                 return False
             
-            self.smart_delay()
+            await asyncio.sleep(2)
             
-            # Fill password - EXACT SAME LOGIC AS SELENIUM
+            # Fill password
             password_selector = f"input[name='{password_field_name}']"
             try:
                 await self.page.fill(password_selector, CONFIG['password'])
@@ -364,63 +364,91 @@ class PlaywrightSymbolGameSolver:
             except:
                 return False
             
-            self.smart_delay()
+            await asyncio.sleep(2)
             
-            # Click login button - EXACT SAME LOGIC AS SELENIUM
-            login_selectors = [
+            # FIXED: Better login button detection and clicking
+            login_clicked = False
+            
+            # Try multiple button selectors with waiting
+            button_selectors = [
                 "button[type='submit']",
                 "input[type='submit']",
                 "button",
                 "input[value*='Login']",
-                "input[value*='Sign']"
+                "input[value*='Sign']",
+                "[type='submit']",
+                "form[name='login'] button",
+                "form[name='login'] input[type='submit']"
             ]
             
-            login_clicked = False
-            for selector in login_selectors:
+            for selector in button_selectors:
                 try:
-                    await self.page.click(selector)
-                    self.logger.info("Login button clicked")
-                    login_clicked = True
-                    break
-                except:
+                    # Check if element exists and is visible
+                    element = await self.page.query_selector(selector)
+                    if element and await element.is_visible():
+                        await element.click()
+                        self.logger.info(f"Login button clicked with: {selector}")
+                        login_clicked = True
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Failed with {selector}: {e}")
                     continue
             
+            # If no button found, try pressing Enter
             if not login_clicked:
                 try:
-                    await self.page.click("form[name='login']")
-                    self.logger.info("Form submitted")
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Login submitted with Enter key")
                     login_clicked = True
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.error(f"Enter key failed: {e}")
             
-            self.smart_delay()
-            await asyncio.sleep(8)  # Wait for login to process
+            # Wait for navigation after login attempt
+            try:
+                await self.page.wait_for_navigation(timeout=15000)
+                self.logger.info("Navigation detected after login")
+            except:
+                self.logger.info("No navigation detected, waiting...")
+                await asyncio.sleep(5)
             
-            # Verify login - EXACT SAME LOGIC AS SELENIUM
-            await self.page.goto("https://adsha.re/surf")
-            self.smart_delay()
+            # Wait a bit more for page to settle
+            await asyncio.sleep(3)
             
-            current_url = self.page.url
+            # Check if login was successful
+            current_url = self.page.url.lower()
+            self.logger.info(f"Current URL after login: {current_url}")
+            
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("Login successful!")
                 self.state['is_logged_in'] = True
                 await self.save_cookies()
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
+            elif "login" in current_url:
+                self.logger.error("Login failed - still on login page")
+                # Try to get error message
+                try:
+                    error_elements = await self.page.query_selector_all(".error, .alert, [class*='error'], [class*='alert']")
+                    for error in error_elements:
+                        error_text = await error.text_content()
+                        if error_text and error_text.strip():
+                            self.logger.error(f"Login error message: {error_text.strip()}")
+                except:
+                    pass
+                return False
             else:
-                if "login" in current_url:
-                    self.logger.error("Login failed - still on login page")
-                    return False
-                else:
-                    self.logger.info("Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
+                self.logger.info(f"On unknown page after login: {current_url}")
+                # Might be successful but on different page
+                self.state['is_logged_in'] = True
+                await self.save_cookies()
+                self.send_telegram("✅ <b>Login Successful!</b>")
+                return True
                 
         except Exception as e:
             self.logger.error(f"Login error: {e}")
             return False
 
-    # ==================== ORIGINAL GAME SOLVING METHODS ====================
+    # ==================== GAME SOLVING METHODS ====================
     def calculate_similarity(self, str1, str2):
         """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
@@ -778,7 +806,7 @@ class PlaywrightSymbolGameSolver:
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
         """
 
-# Telegram Bot (UNCHANGED)
+# Telegram Bot
 class TelegramBot:
     def __init__(self):
         self.solver = PlaywrightSymbolGameSolver()
@@ -845,7 +873,7 @@ class TelegramBot:
 /help - Show help
 
 💡 <b>Playwright Version</b>
-🚀 Direct conversion from Selenium
+🚀 Fixed login button click
 🦊 Using Firefox
 💾 Memory optimized
             """
