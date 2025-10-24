@@ -103,14 +103,15 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram"""
+    async def send_screenshot_async(self, caption="🖥️ Screenshot"):
+        """Send screenshot to Telegram - FIXED ASYNC VERSION"""
         if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
             screenshot_path = "/tmp/screenshot.png"
-            self.page.screenshot(path=screenshot_path)
+            # FIX: Added await for async screenshot
+            await self.page.screenshot(path=screenshot_path)
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
@@ -128,6 +129,19 @@ class PlaywrightSymbolGameSolver:
                 
             return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
                 
+        except Exception as e:
+            return f"❌ Screenshot error: {str(e)}"
+
+    # Wrapper for sync code to call async screenshot
+    def send_screenshot(self, caption="🖥️ Screenshot"):
+        """Sync wrapper for async screenshot"""
+        try:
+            if self.page and self.telegram_chat_id:
+                # Run async function in thread
+                result = asyncio.run(self.send_screenshot_async(caption))
+                return result
+            else:
+                return "❌ Browser not running or Telegram not configured"
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
@@ -223,8 +237,8 @@ class PlaywrightSymbolGameSolver:
                 with open(self.cookies_file, 'r') as f:
                     cookies = json.load(f)
                 
-                self.page.goto("https://adsha.re", wait_until="networkidle")
-                self.page.context.add_cookies(cookies)
+                await self.page.goto("https://adsha.re", wait_until="networkidle")
+                await self.page.context.add_cookies(cookies)
                 
                 self.logger.info("Cookies loaded - session reused")
                 return True
@@ -233,8 +247,8 @@ class PlaywrightSymbolGameSolver:
         
         return False
 
-    def validate_session(self):
-        """Check if session is still valid"""
+    async def validate_session_async(self):
+        """Check if session is still valid - ASYNC VERSION"""
         if not self.is_browser_alive():
             return False
         
@@ -263,7 +277,7 @@ class PlaywrightSymbolGameSolver:
         # Try existing session first
         if self.state['is_logged_in']:
             self.logger.info("Attempting to reuse session...")
-            if self.load_cookies() and self.validate_session():
+            if await self.load_cookies_async() and await self.validate_session_async():
                 self.logger.info("Session reused successfully!")
                 return True
         
@@ -278,6 +292,23 @@ class PlaywrightSymbolGameSolver:
             self.state['is_logged_in'] = False
             self.logger.error("Login failed")
             return False
+
+    async def load_cookies_async(self):
+        """Load cookies from file - ASYNC VERSION"""
+        try:
+            if os.path.exists(self.cookies_file) and self.is_browser_alive():
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                
+                await self.page.goto("https://adsha.re", wait_until="networkidle")
+                await self.page.context.add_cookies(cookies)
+                
+                self.logger.info("Cookies loaded - session reused")
+                return True
+        except Exception as e:
+            self.logger.warning(f"Could not load cookies: {e}")
+        
+        return False
 
     def smart_delay(self):
         """Randomized delay between actions"""
@@ -331,7 +362,7 @@ class PlaywrightSymbolGameSolver:
 
     # ==================== LOGIN METHOD ====================
     async def force_login_async(self):
-        """ORIGINAL WORKING LOGIN"""
+        """ORIGINAL WORKING LOGIN - FIXED VERSION"""
         try:
             self.logger.info("LOGIN: Attempting login...")
             
@@ -397,57 +428,95 @@ class PlaywrightSymbolGameSolver:
             
             await asyncio.sleep(2)
             
-            # Click login button
+            # Click login button - FIXED: Better button detection
+            login_clicked = False
+            
+            # Try multiple button selectors
             login_selectors = [
                 "button[type='submit']",
-                "input[type='submit']",
-                "button",
+                "input[type='submit']", 
+                "button:has-text('Login')",
+                "button:has-text('Sign In')",
                 "input[value*='Login']",
-                "input[value*='Sign']"
+                "input[value*='Sign']",
+                "form[name='login'] button",
+                "button"
             ]
             
-            login_clicked = False
             for selector in login_selectors:
                 try:
-                    await self.page.click(selector)
-                    self.logger.info("Login button clicked")
-                    login_clicked = True
-                    break
+                    buttons = await self.page.query_selector_all(selector)
+                    for button in buttons:
+                        if await button.is_visible():
+                            await button.click()
+                            self.logger.info(f"Login button clicked with selector: {selector}")
+                            login_clicked = True
+                            break
+                    if login_clicked:
+                        break
                 except:
                     continue
             
+            # If no button found, try form submission
             if not login_clicked:
                 try:
-                    await self.page.click("form[name='login']")
-                    self.logger.info("Form submitted")
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Form submitted with Enter key")
                     login_clicked = True
                 except:
                     pass
             
-            await asyncio.sleep(8)
+            # Wait for navigation with timeout
+            try:
+                await self.page.wait_for_load_state('networkidle', timeout=10000)
+            except:
+                self.logger.info("Waiting for page load...")
             
-            # Verify login
-            await self.page.goto("https://adsha.re/surf", wait_until="networkidle")
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
             
-            current_url = self.page.url
+            # Check if login was successful
+            current_url = self.page.url.lower()
+            
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("Login successful!")
                 self.state['is_logged_in'] = True
                 self.save_cookies()
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
+            elif "login" in current_url:
+                # Login failed, check for error messages
+                error_selectors = [
+                    ".error",
+                    ".alert",
+                    "[class*='error']",
+                    "[class*='alert']"
+                ]
+                
+                for selector in error_selectors:
+                    try:
+                        error_elements = await self.page.query_selector_all(selector)
+                        for error in error_elements:
+                            error_text = await error.text_content()
+                            if error_text and len(error_text.strip()) > 0:
+                                self.logger.error(f"Login error: {error_text.strip()}")
+                    except:
+                        continue
+                
+                self.logger.error("Login failed - still on login page")
+                return False
             else:
-                if "login" in current_url:
-                    self.logger.error("Login failed - still on login page")
-                    return False
-                else:
-                    self.logger.info("Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
+                # Might be on some intermediate page, continue
+                self.logger.info("Login may need verification, continuing...")
+                self.state['is_logged_in'] = True
+                return True
                 
         except Exception as e:
             self.logger.error(f"Login error: {e}")
+            # Try to take screenshot of error
+            try:
+                await self.send_screenshot_async("❌ Login Error")
+            except:
+                pass
             return False
 
     # ==================== GAME SOLVING METHODS ====================
