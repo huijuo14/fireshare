@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AdShare ULTIMATE BOT - Fixed Restart Time & Pause Command
+AdShare ULTIMATE BOT - Simplified
 ✅ Random Restart (6-7 AM) ✅ Pause/Resume Commands
-✅ uBlock Origin ✅ All Features Working
+✅ uBlock Origin ✅ Core Features Only
 """
 
 import os
@@ -12,8 +12,6 @@ import logging
 import re
 import requests
 import threading
-import json
-import gc
 import asyncio
 import datetime
 import shutil
@@ -29,7 +27,6 @@ CONFIG = {
     'min_delay': 1,
     'max_delay': 3,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
-    'credit_check_interval': 1800,
     'max_consecutive_failures': 10,
     'refresh_page_after_failures': 5,
     'send_screenshot_on_error': True,
@@ -56,7 +53,6 @@ class UltimateAdshareBot:
         self.browser = None
         self.page = None
         self.telegram_chat_id = None
-        self.cookies_file = "/app/cookies.json"
         self.profile_dir = "/tmp/firefox_profile"
         
         # State Management
@@ -65,8 +61,6 @@ class UltimateAdshareBot:
             'is_paused': False,
             'total_solved': 0,
             'status': 'stopped',
-            'last_credits': 'Unknown',
-            'monitoring_active': False,
             'is_logged_in': False,
             'consecutive_fails': 0,
             'last_error_screenshot': 0,
@@ -79,7 +73,6 @@ class UltimateAdshareBot:
         }
         
         self.solver_thread = None
-        self.monitoring_thread = None
         self.setup_logging()
         self.setup_telegram()
     
@@ -88,12 +81,10 @@ class UltimateAdshareBot:
         now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
         today = now_ist.date()
         
-        # Parse time range
         restart_min, restart_max = CONFIG['restart_time_range']
         min_time = datetime.datetime.strptime(restart_min, "%H:%M").time()
         max_time = datetime.datetime.strptime(restart_max, "%H:%M").time()
         
-        # Generate random time between min and max
         min_minutes = min_time.hour * 60 + min_time.minute
         max_minutes = max_time.hour * 60 + max_time.minute
         random_minutes = random.randint(min_minutes, max_minutes)
@@ -101,10 +92,7 @@ class UltimateAdshareBot:
         random_hour = random_minutes // 60
         random_minute = random_minutes % 60
         
-        # Create datetime object for today
         random_time = datetime.datetime.combine(today, datetime.time(random_hour, random_minute))
-        
-        # If the random time is in the past, schedule for tomorrow
         if random_time < now_ist:
             random_time += datetime.timedelta(days=1)
         
@@ -167,21 +155,18 @@ class UltimateAdshareBot:
             await self.page.screenshot(path=screenshot_path)
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            
             with open(screenshot_path, 'rb') as photo:
                 files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
                     'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
                 }
-                
                 response = requests.post(url, files=files, data=data, timeout=30)
             
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
                 
             return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
-                
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
@@ -192,25 +177,19 @@ class UltimateAdshareBot:
         try:
             self.playwright = await async_playwright().start()
             
-            # Prepare Firefox profile with uBlock Origin
             profile_dir = self.profile_dir
             extensions_dir = os.path.join(profile_dir, "extensions")
             os.makedirs(extensions_dir, exist_ok=True)
             
             ublock_xpi_path = CONFIG['ublock_path']
             if os.path.exists(ublock_xpi_path):
-                # Copy uBlock .xpi to extensions directory
                 ublock_dest = os.path.join(extensions_dir, "uBlock0@raymondhill.net.xpi")
                 shutil.copy(ublock_xpi_path, ublock_dest)
                 self.logger.info("uBlock Origin copied to Firefox profile")
             else:
                 self.logger.warning("uBlock Origin .xpi not found, launching without extension")
             
-            launch_args = [
-                '--headless=new',
-            ]
-            
-            # Browser context options
+            launch_args = ['--headless=new']
             context_options = {
                 'viewport': {'width': 1280, 'height': 720},
                 'user_agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
@@ -218,33 +197,20 @@ class UltimateAdshareBot:
                 'bypass_csp': True
             }
             
-            # Use persistent context for Firefox
             context = await self.playwright.firefox.launch_persistent_context(
                 user_data_dir=profile_dir,
                 headless=True,
                 args=launch_args,
-                timeout=300000,  # Increased timeout to 300s
+                timeout=300000,
                 **context_options
             )
             
-            # Load cookies if they exist
-            if os.path.exists(self.cookies_file):
-                try:
-                    with open(self.cookies_file, 'r') as f:
-                        cookies = json.load(f)
-                    await context.add_cookies(cookies)
-                    self.logger.info("Cookies loaded from file")
-                except Exception as e:
-                    self.logger.warning(f"Failed to load cookies: {e}")
-            
             self.page = await context.new_page()
-            
             self.page.set_default_timeout(30000)
             self.page.set_default_navigation_timeout(45000)
             
             self.logger.info("Playwright started successfully!")
             return True
-            
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
             return False
@@ -297,7 +263,6 @@ class UltimateAdshareBot:
         """Pause the solver"""
         if not self.state['is_running']:
             return "❌ Solver is not running"
-        
         if self.state['is_paused']:
             return "⏸️ Solver is already paused"
         
@@ -311,7 +276,6 @@ class UltimateAdshareBot:
         """Resume the solver"""
         if not self.state['is_running']:
             return "❌ Solver is not running"
-        
         if not self.state['is_paused']:
             return "▶️ Solver is already running"
         
@@ -325,18 +289,13 @@ class UltimateAdshareBot:
         """ULTIMATE LOGIN WITH 12+ METHODS"""
         try:
             self.logger.info("🚀 STARTING ULTIMATE LOGIN (12+ METHODS)...")
-            
             login_url = "https://adsha.re/login"
             await self.page.goto(login_url, wait_until='networkidle')
             await self.page.wait_for_selector("body")
-            
             await self.smart_delay_async()
             
-            # ==================== METHOD 1: FORM ANALYSIS ====================
             page_content = await self.page.content()
             soup = BeautifulSoup(page_content, 'html.parser')
-            
-            # Find ALL forms
             all_forms = soup.find_all('form')
             self.logger.info(f"Found {len(all_forms)} forms")
             
@@ -344,32 +303,23 @@ class UltimateAdshareBot:
             if not form:
                 self.logger.warning("No login form found by name, trying first form")
                 form = all_forms[0] if all_forms else None
-            
             if not form:
                 self.logger.error("No forms found at all!")
                 return False
             
-            # ==================== PASSWORD FIELD DISCOVERY (4 METHODS) ====================
             password_field_name = None
-            
-            # Method 1A: Find by value="Password"
             for field in form.find_all('input'):
                 field_name = field.get('name', '')
                 field_value = field.get('value', '')
-                
                 if field_value == 'Password' and field_name != 'mail' and field_name:
                     password_field_name = field_name
                     self.logger.info(f"Found password field by value: {password_field_name}")
                     break
-            
-            # Method 1B: Find by type="password"
             if not password_field_name:
                 password_fields = form.find_all('input', {'type': 'password'})
                 if password_fields:
                     password_field_name = password_fields[0].get('name')
                     self.logger.info(f"Found password field by type: {password_field_name}")
-            
-            # Method 1C: Find any non-email field
             if not password_field_name:
                 for field in form.find_all('input'):
                     field_name = field.get('name', '')
@@ -378,24 +328,19 @@ class UltimateAdshareBot:
                         password_field_name = field_name
                         self.logger.info(f"Found password field by exclusion: {password_field_name}")
                         break
-            
-            # Method 1D: Find second input field
             if not password_field_name:
                 inputs = form.find_all('input')
                 if len(inputs) >= 2:
                     password_field_name = inputs[1].get('name')
                     self.logger.info(f"Found password field by position: {password_field_name}")
-            
             if not password_field_name:
                 self.logger.error("Could not find password field by any method")
                 return False
             
-            # ==================== EMAIL FILLING (8 METHODS) ====================
             self.logger.info("Filling email (8 methods)...")
-            
             email_selectors = [
                 "input[name='mail']",
-                "input[type='email']", 
+                "input[type='email']",
                 "input[placeholder*='email' i]",
                 "input[placeholder*='Email' i]",
                 "input[name*='mail' i]",
@@ -403,7 +348,6 @@ class UltimateAdshareBot:
                 "input:first-of-type",
                 "input:nth-of-type(1)"
             ]
-            
             email_filled = False
             for selector in email_selectors:
                 try:
@@ -415,16 +359,13 @@ class UltimateAdshareBot:
                         break
                 except:
                     continue
-            
             if not email_filled:
                 self.logger.error("All email filling methods failed")
                 return False
             
             await self.smart_delay_async()
             
-            # ==================== PASSWORD FILLING (6 METHODS) ====================
             self.logger.info("Filling password (6 methods)...")
-            
             password_selectors = [
                 f"input[name='{password_field_name}']",
                 "input[type='password']",
@@ -433,7 +374,6 @@ class UltimateAdshareBot:
                 "input:nth-of-type(2)",
                 "input:last-of-type"
             ]
-            
             password_filled = False
             for selector in password_selectors:
                 try:
@@ -445,19 +385,16 @@ class UltimateAdshareBot:
                         break
                 except:
                     continue
-            
             if not password_filled:
                 self.logger.error("All password filling methods failed")
                 return False
             
             await self.smart_delay_async()
             
-            # ==================== FORM SUBMISSION (12+ METHODS) ====================
             self.logger.info("Submitting form (12+ methods)...")
-            
             login_selectors = [
                 "button[type='submit']",
-                "input[type='submit']", 
+                "input[type='submit']",
                 "button",
                 "input[value*='Login' i]",
                 "input[value*='Sign' i]",
@@ -470,10 +407,7 @@ class UltimateAdshareBot:
                 "button[class*='login']",
                 "button[class*='submit']"
             ]
-            
             login_clicked = False
-            
-            # Method A: Try all click selectors
             for selector in login_selectors:
                 try:
                     if await self.page.is_visible(selector):
@@ -483,8 +417,6 @@ class UltimateAdshareBot:
                         break
                 except:
                     continue
-            
-            # Method B: JavaScript form submission
             if not login_clicked:
                 try:
                     await self.page.evaluate("""() => {
@@ -495,8 +427,6 @@ class UltimateAdshareBot:
                     login_clicked = True
                 except:
                     pass
-            
-            # Method C: Press Enter in password field
             if not login_clicked:
                 try:
                     password_selector = f"input[name='{password_field_name}']"
@@ -506,8 +436,6 @@ class UltimateAdshareBot:
                     login_clicked = True
                 except:
                     pass
-            
-            # Method D: Click anywhere and press Enter
             if not login_clicked:
                 try:
                     await self.page.click('body')
@@ -516,27 +444,22 @@ class UltimateAdshareBot:
                     login_clicked = True
                 except:
                     pass
-            
             if not login_clicked:
                 self.logger.error("All login submission methods failed")
                 return False
             
-            # ==================== VERIFICATION ====================
             await self.smart_delay_async()
             await asyncio.sleep(8)
             
-            # Navigate to surf to verify
             await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
             await self.smart_delay_async()
             
             final_url = self.page.url.lower()
             self.logger.info(f"Final URL: {final_url}")
             
-            # Check if login successful
             if "surf" in final_url or "dashboard" in final_url:
                 self.logger.info("🎉 LOGIN SUCCESSFUL!")
                 self.state['is_logged_in'] = True
-                await self.save_cookies()
                 self.send_telegram("✅ <b>ULTIMATE LOGIN SUCCESSFUL!</b>")
                 return True
             elif "login" in final_url:
@@ -546,74 +469,9 @@ class UltimateAdshareBot:
                 self.logger.warning("⚠️ On unexpected page, but might be logged in")
                 self.state['is_logged_in'] = True
                 return True
-                
         except Exception as e:
             self.logger.error(f"❌ ULTIMATE LOGIN ERROR: {e}")
             return False
-
-    async def save_cookies(self):
-        """Save cookies to file"""
-        try:
-            if self.page and self.state['is_logged_in']:
-                cookies = await self.page.context.cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f)
-                self.logger.info("Cookies saved")
-        except Exception as e:
-            self.logger.warning(f"Could not save cookies: {e}")
-
-    async def load_cookies(self):
-        """Load cookies from file"""
-        try:
-            if os.path.exists(self.cookies_file):
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                await self.page.context.add_cookies(cookies)
-                self.logger.info("Cookies loaded from file")
-                return True
-            return False
-        except Exception as e:
-            self.logger.warning(f"Could not load cookies: {e}")
-            return False
-
-    async def export_cookies(self):
-        """Export cookies for Telegram"""
-        try:
-            if self.page:
-                cookies = await self.page.context.cookies()
-                cookie_summary = []
-                for cookie in cookies:
-                    if 'adshare' in cookie['name'].lower() or 'session' in cookie['name'].lower():
-                        cookie_summary.append({
-                            'name': cookie['name'],
-                            'value': cookie['value'],
-                            'domain': cookie['domain']
-                        })
-                
-                return json.dumps(cookie_summary, indent=2)
-            return "No cookies available"
-        except Exception as e:
-            return f"Error exporting cookies: {str(e)}"
-
-    async def import_cookies(self, cookie_json):
-        """Import cookies from JSON"""
-        try:
-            cookies = json.loads(cookie_json)
-            await self.page.context.clear_cookies()
-            await self.page.context.add_cookies(cookies)
-            self.logger.info("Cookies imported successfully")
-            
-            # Verify login
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            if "login" not in self.page.url.lower():
-                self.state['is_logged_in'] = True
-                await self.save_cookies()
-                return "✅ Cookies imported and login verified!"
-            else:
-                return "❌ Cookies imported but login failed"
-                
-        except Exception as e:
-            return f"❌ Cookie import failed: {str(e)}"
 
     async def check_daily_reset(self):
         """Check if daily reset is needed"""
@@ -622,7 +480,6 @@ class UltimateAdshareBot:
             current_date = now_ist.date().isoformat()
             
             if current_date != self.state['last_reset_date']:
-                # Check if it's past reset time
                 reset_time = datetime.datetime.strptime(CONFIG['reset_time_ist'], "%H:%M").time()
                 current_time = now_ist.time()
                 
@@ -631,42 +488,15 @@ class UltimateAdshareBot:
                     self.state['credits_earned_today'] = 0
                     self.state['games_solved_today'] = 0
                     self.state['last_reset_date'] = current_date
-                    # Schedule new random restart time
                     self.state['next_restart_time'] = self.get_random_restart_time()
                     
                     self.logger.info(f"💰 Daily reset completed! Previous: {old_credits}, New target: {self.state['daily_target']}")
                     self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits\n💰 Yesterday: {old_credits} credits")
                     return True
-            
             return False
         except Exception as e:
             self.logger.error(f"Reset check error: {e}")
             return False
-
-    async def check_credits(self):
-        """Check current credit balance"""
-        try:
-            await self.page.goto("https://adsha.re/account", wait_until='networkidle')
-            content = await self.page.content()
-            
-            # Look for credit information
-            credit_patterns = [
-                r'(\d+)\s*credits?',
-                r'balance[:\s]*(\d+)',
-                r'(\d+)\s*[Cc]redits',
-            ]
-            
-            for pattern in credit_patterns:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    credits = match.group(1)
-                    self.state['last_credits'] = credits
-                    return f"💰 Current credits: {credits}"
-            
-            return "❌ Could not find credit information"
-            
-        except Exception as e:
-            return f"❌ Credit check failed: {str(e)}"
 
     def is_browser_alive(self):
         """Check if browser is alive"""
@@ -683,22 +513,17 @@ class UltimateAdshareBot:
         if not self.is_browser_alive():
             self.logger.error("Browser dead during page check")
             return False
-            
         try:
             current_url = self.page.url.lower()
-            
             if "login" in current_url:
                 self.logger.info("Auto-login: redirected to login")
                 return await self.ultimate_login()
-            
             if "surf" not in current_url and "adsha.re" in current_url:
                 self.logger.info("Redirecting to surf page...")
                 await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
                 await self.smart_delay_async()
                 return True
-            
             return True
-            
         except Exception as e:
             self.logger.error(f"Page navigation error: {e}")
             return False
@@ -707,7 +532,6 @@ class UltimateAdshareBot:
         """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
             return 0.0
-        
         common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
         max_len = max(len(str1), len(str2))
         return common_chars / max_len if max_len > 0 else 0.0
@@ -721,7 +545,6 @@ class UltimateAdshareBot:
             if not question_content or not answer_content:
                 return {'match': False, 'confidence': 0.0, 'exact': False}
             
-            # 0.1% intentional failure rate for realism
             if random.random() < CONFIG['natural_failure_rate']:
                 self.logger.info("🤖 0.1% intentional human-like failure")
                 return {'match': False, 'confidence': 0.0, 'exact': False}
@@ -742,9 +565,7 @@ class UltimateAdshareBot:
             
             similarity = self.calculate_similarity(clean_question, clean_answer)
             should_match = similarity >= 0.90
-            
             return {'match': should_match, 'confidence': similarity, 'exact': False}
-            
         except Exception as e:
             self.logger.warning(f"Symbol comparison error: {e}")
             return {'match': False, 'confidence': 0.0, 'exact': False}
@@ -760,14 +581,12 @@ class UltimateAdshareBot:
                 answer_svg = await link.query_selector("svg")
                 if answer_svg:
                     comparison = await self.compare_symbols(question_svg, answer_svg)
-                    
                     if comparison['exact'] and comparison['match']:
                         exact_matches.append({
                             'link': link,
                             'confidence': comparison['confidence'],
                             'exact': True
                         })
-                    
                     elif comparison['match'] and comparison['confidence'] > highest_confidence:
                         highest_confidence = comparison['confidence']
                         best_match = {
@@ -780,21 +599,18 @@ class UltimateAdshareBot:
         
         if exact_matches:
             return exact_matches[0]
-        
         if best_match and best_match['confidence'] >= 0.90:
             return best_match
-        
         return None
 
     async def solve_symbol_game(self):
         """Main game solving logic"""
         if not self.state['is_running'] or self.state['is_paused']:
             return False
-        
         if not self.is_browser_alive():
             self.logger.error("Browser dead during game solving")
             return False
-            
+        
         try:
             if not await self.ensure_correct_page():
                 self.logger.info("Not on correct page, redirecting...")
@@ -803,21 +619,17 @@ class UltimateAdshareBot:
                     return False
             
             question_svg = await self.page.wait_for_selector("svg", timeout=15000)
-            
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
             
             links = await self.page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
-            
             if not links:
                 self.logger.info("No answer links found")
                 return False
             
             best_match = await self.find_best_match(question_svg, links)
-            
             if best_match:
-                # Add human-like hesitation before clicking
                 if random.random() < 0.15:  # 15% chance to hesitate
                     hesitation = random.uniform(0.5, 2.0)
                     await asyncio.sleep(hesitation)
@@ -830,18 +642,15 @@ class UltimateAdshareBot:
                 match_type = "EXACT" if best_match['exact'] else "FUZZY"
                 self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}")
                 
-                # Check if daily target reached
                 if self.state['credits_earned_today'] >= self.state['daily_target']:
                     self.logger.info(f"🎯 Daily target reached! {self.state['credits_earned_today']}/{self.state['daily_target']}")
                     self.send_telegram(f"🎯 <b>Daily Target Reached!</b>\n💰 {self.state['credits_earned_today']}/{self.state['daily_target']} credits")
-                    # Continue solving for extra credits
                 
                 return True
             else:
                 self.logger.info("No good match found")
                 self.handle_consecutive_failures()
                 return False
-            
         except Exception as e:
             self.logger.error(f"Solver error: {e}")
             self.handle_consecutive_failures()
@@ -853,20 +662,17 @@ class UltimateAdshareBot:
         current_fails = self.state['consecutive_fails']
         
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
-        
         if not self.is_browser_alive():
             return
         
         if current_fails >= CONFIG['refresh_page_after_failures']:
             self.logger.info("Refreshing page...")
             self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
-            
             try:
                 asyncio.create_task(self.page.reload())
                 self.state['consecutive_fails'] = 0
             except Exception as e:
                 self.logger.error(f"Page refresh failed: {e}")
-        
         elif current_fails >= CONFIG['max_consecutive_failures']:
             self.logger.error("Too many failures! Stopping...")
             self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
@@ -882,38 +688,21 @@ class UltimateAdshareBot:
             self.stop()
             return
         
-        # Try cookie login first
-        if await self.load_cookies():
-            self.logger.info("Attempting cookie login...")
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            if "login" not in self.page.url.lower():
-                self.state['is_logged_in'] = True
-                self.logger.info("✅ Cookie login successful!")
-            else:
-                self.logger.info("❌ Cookie login failed, trying manual login...")
-                if not await self.ultimate_login():
-                    self.logger.error("Cannot start - Login failed")
-                    self.stop()
-                    return
-        else:
-            if not await self.ultimate_login():
-                self.logger.error("Cannot start - Login failed")
-                self.stop()
-                return
+        if not await self.ultimate_login():
+            self.logger.error("Cannot start - Login failed")
+            self.stop()
+            return
         
         consecutive_fails = 0
         cycle_count = 0
-        last_credit_check = 0
         games_solved = 0
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
-                # Check if paused
                 if self.state['is_paused']:
                     await asyncio.sleep(10)
                     continue
                 
-                # Check if it's time to restart (6-7 AM)
                 if self.should_restart_now():
                     self.logger.info("🔄 Scheduled restart time reached! Restarting...")
                     self.send_telegram("🔄 <b>Scheduled Restart</b>\n⏰ Restarting bot as scheduled")
@@ -925,63 +714,37 @@ class UltimateAdshareBot:
                     self.stop()
                     break
                 
-                # Check daily reset
                 reset_occurred = await self.check_daily_reset()
                 if reset_occurred:
-                    games_solved = 0  # Reset counter after daily reset
+                    games_solved = 0
                 
-                # Periodic credit check
-                if time.time() - last_credit_check > CONFIG['credit_check_interval']:
-                    credit_info = await self.check_credits()
-                    self.logger.info(credit_info)
-                    last_credit_check = time.time()
-                
-                # Page refresh every 30 games
                 if cycle_count % 30 == 0 and cycle_count > 0:
                     await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
-                # Memory cleanup every 50 games
-                if cycle_count % 50 == 0:
-                    gc.collect()
-                    await self.save_cookies()
-                
-                # Check for breaks
                 if games_solved > 0:
-                    # Short breaks every 30-50 games
                     if games_solved % random.randint(*CONFIG['short_break_frequency']) == 0:
                         await self.take_short_break()
-                    
-                    # Meal breaks every 200-300 games
                     if games_solved % random.randint(*CONFIG['meal_break_frequency']) == 0:
                         await self.take_meal_break()
-                    
-                    # Long breaks (2% chance)
                     if random.random() < CONFIG['long_break_chance']:
                         await self.take_long_break()
                 
-                # Night mode slowdown
                 if self.is_night_time():
                     night_delay = random.uniform(3, 8) * CONFIG['night_slowdown_factor']
                     await asyncio.sleep(night_delay)
                 
-                # Solve game
                 game_solved = await self.solve_symbol_game()
-                
                 if game_solved:
                     games_solved += 1
                     consecutive_fails = 0
-                    
-                    # Micro-break between games
                     await self.smart_delay_async()
-                    
                 else:
                     consecutive_fails += 1
                     await asyncio.sleep(5)
                 
                 cycle_count += 1
-                    
             except Exception as e:
                 self.logger.error(f"Loop error: {e}")
                 consecutive_fails += 1
@@ -994,15 +757,11 @@ class UltimateAdshareBot:
     async def perform_restart(self):
         """Perform a complete restart"""
         self.logger.info("Performing scheduled restart...")
-        
-        # Save current state
         current_credits = self.state['credits_earned_today']
         current_target = self.state['daily_target']
         
-        # Cleanup
         await self.cleanup_playwright()
         
-        # Reset state but preserve credits and target
         self.state['is_running'] = True
         self.state['is_paused'] = False
         self.state['consecutive_fails'] = 0
@@ -1010,7 +769,6 @@ class UltimateAdshareBot:
         self.state['daily_target'] = current_target
         self.state['next_restart_time'] = self.get_random_restart_time()
         
-        # Restart solver loop
         await self.solver_loop()
 
     async def cleanup_playwright(self):
@@ -1063,7 +821,6 @@ class UltimateAdshareBot:
         """Stop the solver"""
         self.state['is_running'] = False
         self.state['is_paused'] = False
-        self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
         async def close_playwright():
@@ -1097,7 +854,6 @@ class UltimateAdshareBot:
         hours, remainder = divmod(time_until_reset.seconds, 3600)
         minutes = remainder // 60
         
-        # Calculate hourly rate
         runtime = time.time() - self.state['start_time']
         hours_running = max(1, runtime / 3600)
         hourly_rate = self.state['games_solved_today'] / hours_running
@@ -1130,7 +886,6 @@ class TelegramBot:
     def handle_updates(self):
         """Handle Telegram updates"""
         self.logger.info("Starting Telegram bot...")
-        
         while True:
             try:
                 url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getUpdates"
@@ -1139,7 +894,6 @@ class TelegramBot:
                     params['offset'] = self.last_update_id + 1
                 
                 response = requests.get(url, params=params, timeout=35)
-                
                 if response.status_code == 200:
                     updates = response.json()
                     if updates['result']:
@@ -1148,9 +902,7 @@ class TelegramBot:
                             self.process_message(update)
                 else:
                     self.logger.warning(f"Telegram API error: {response.status_code}")
-                
                 time.sleep(1)
-                
             except Exception as e:
                 self.logger.error(f"Telegram error: {e}")
                 time.sleep(5)
@@ -1167,7 +919,6 @@ class TelegramBot:
             self.solver.telegram_chat_id = chat_id
         
         response = ""
-        
         if text.startswith('/start'):
             response = self.solver.start()
         elif text.startswith('/stop'):
@@ -1183,21 +934,17 @@ class TelegramBot:
 🤖 <b>AdShare ULTIMATE Bot Commands</b>
 
 /start - Start solver
-/stop - Stop solver  
+/stop - Stop solver
 /pause - Pause solver
 /resume - Resume solver
 /status - Check status
-/credits - Check credit balance
 /screenshot - Take screenshot
-/cookies - Export cookies
-/setcookies [json] - Import cookies
 /target [number] - Set daily target
 /help - Show help
 
 🎯 <b>ULTIMATE FEATURES</b>
 🔐 12+ login methods
 🛡️ uBlock Origin
-🍪 Cookie management
 🎯 Daily targets
 📊 24/7 operation
 ⏰ Smart break system
@@ -1205,24 +952,10 @@ class TelegramBot:
 🔄 Auto-restart (6-7 AM)
 ⏸️ Pause/Resume control
             """
-        elif text.startswith('/credits'):
-            async def check_credits_async():
-                return await self.solver.check_credits()
-            response = asyncio.run(check_credits_async())
         elif text.startswith('/screenshot'):
             async def screenshot_async():
                 return await self.solver.send_screenshot()
             response = asyncio.run(screenshot_async())
-        elif text.startswith('/cookies'):
-            async def cookies_async():
-                cookies = await self.solver.export_cookies()
-                return f"🍪 <b>Current Cookies:</b>\n<code>{cookies}</code>"
-            response = asyncio.run(cookies_async())
-        elif text.startswith('/setcookies'):
-            cookie_json = text.replace('/setcookies', '').strip()
-            async def import_cookies_async():
-                return await self.solver.import_cookies(cookie_json)
-            response = asyncio.run(import_cookies_async())
         elif text.startswith('/target'):
             try:
                 target = int(text.split()[1])
