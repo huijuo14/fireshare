@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - ULTIMATE PROVEN EDITION
-PROVEN LOGIN + ALL FEATURES + ZERO FAILURES
+AdShare Symbol Game Solver - ULTIMATE FALLBACK + COOKIE IMPORT
+EVERY LOGIN METHOD + COOKIE BYPASS
 """
 
 import os
@@ -14,38 +14,26 @@ import threading
 import json
 import gc
 import asyncio
-from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
-# ==================== ULTIMATE CONFIGURATION ====================
+# ==================== CONFIGURATION ====================
 CONFIG = {
-    'email': os.getenv('ADSHARE_EMAIL', "jiocloud90@gmail.com"),
-    'password': os.getenv('ADSHARE_PASSWORD', "@Sd2007123"),
-    'telegram_token': os.getenv('TELEGRAM_TOKEN', "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8"),
-    
-    # Timing Configuration
-    'min_delay': 1.0,
-    'max_delay': 3.0,
-    'page_load_delay': 3,
-    
-    # Game Settings
-    'max_consecutive_failures': 20,
-    'refresh_page_after_failures': 10,
-    
-    # Monitoring
+    'email': "jiocloud90@gmail.com",
+    'password': "@Sd2007123",
+    'base_delay': 2,
+    'random_delay': True,
+    'min_delay': 1,
+    'max_delay': 3,
+    'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'credit_check_interval': 1800,
-    
-    # Anti-Bot Protection
-    'games_between_breaks': 50,
-    'break_min_minutes': 2,
-    'break_max_minutes': 5,
-    'long_break_chance': 2,
-    'long_break_min_minutes': 15,
-    'long_break_max_minutes': 25,
+    'max_consecutive_failures': 10,
+    'refresh_page_after_failures': 5,
+    'send_screenshot_on_error': True,
+    'screenshot_cooldown_minutes': 5,
 }
 
-class UltimateProvenSolver:
+class UltimateSymbolGameSolver:
     def __init__(self):
         self.playwright = None
         self.browser = None
@@ -53,41 +41,31 @@ class UltimateProvenSolver:
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
-        # Ultimate State Management
+        # State Management
         self.state = {
             'is_running': False,
-            'is_paused': False,
             'total_solved': 0,
             'status': 'stopped',
             'last_credits': 'Unknown',
+            'monitoring_active': False,
             'is_logged_in': False,
             'consecutive_fails': 0,
-            'browser_restarts': 0,
-            'games_since_last_break': 0,
-            
-            # Daily Target System
-            'daily_target': 3000,
-            'credits_earned_today': 0,
-            'daily_start_time': None,
-            'session_history': [],
+            'last_error_screenshot': 0,
         }
         
         self.solver_thread = None
         self.monitoring_thread = None
-        self.main_loop = None
-        self.setup_ultimate_logging()
+        self.setup_logging()
         self.setup_telegram()
-        self.initialize_daily_system()
     
-    def setup_ultimate_logging(self):
-        """Setup ultimate logging"""
+    def setup_logging(self):
+        """Setup logging"""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             datefmt='%H:%M:%S'
         )
         self.logger = logging.getLogger(__name__)
-        self.logger.info("🚀 ULTIMATE PROVEN SOLVER INITIALIZED")
     
     def setup_telegram(self):
         """Setup Telegram bot"""
@@ -97,19 +75,18 @@ class UltimateProvenSolver:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 updates = response.json()
-                if updates.get('result'):
+                if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🎯 <b>ULTIMATE PROVEN SOLVER STARTED!</b>")
+                    self.send_telegram("🤖 <b>AdShare ULTIMATE Solver Started!</b>")
                     return True
-            self.logger.warning("No Telegram messages found, waiting for /start")
             return False
         except Exception as e:
-            self.logger.warning(f"Telegram setup: {e}")
+            self.logger.error(f"Telegram setup failed: {e}")
             return False
     
     def send_telegram(self, text, parse_mode='HTML'):
-        """Send Telegram message"""
+        """Send message to Telegram"""
         if not self.telegram_chat_id:
             return False
         
@@ -123,136 +100,115 @@ class UltimateProvenSolver:
             response = requests.post(url, json=payload, timeout=10)
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning(f"Telegram send: {e}")
+            self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    def initialize_daily_system(self):
-        """Initialize daily target system with IST time"""
-        self.state['daily_start_time'] = self.get_daily_reset_time()
-        self.logger.info(f"🎯 Daily system initialized - Reset at: {self.state['daily_start_time'].strftime('%I:%M %p IST')}")
-
-    # ==================== IST TIME SYSTEM ====================
-    def get_ist_time(self):
-        """Get IST time (UTC+5:30)"""
-        utc_now = datetime.utcnow()
-        ist_offset = timedelta(hours=5, minutes=30)
-        return utc_now + ist_offset
-
-    def get_daily_reset_time(self):
-        """Get today's reset time (5:30 AM IST)"""
-        ist_now = self.get_ist_time()
-        reset_time = ist_now.replace(hour=5, minute=30, second=0, microsecond=0)
-        
-        if ist_now >= reset_time:
-            reset_time += timedelta(days=1)
-            
-        return reset_time
-
-    def check_daily_reset(self):
-        """Check daily reset"""
-        ist_now = self.get_ist_time()
-        reset_time = self.state['daily_start_time']
-        
-        if ist_now >= reset_time:
-            old_target = self.state['daily_target']
-            old_earned = self.state['credits_earned_today']
-            
-            self.state['credits_earned_today'] = 0
-            self.state['daily_start_time'] = self.get_daily_reset_time()
-            self.state['session_history'] = []
-            self.state['is_paused'] = False
-            
-            self.logger.info(f"🎯 DAILY RESET - New day started! Target: {old_target}")
-            
-            reset_message = (
-                f"🔄 <b>NEW DAY STARTED!</b>\n"
-                f"💎 Yesterday: {old_earned}/{old_target} credits\n"
-                f"🎯 Today's Target: {old_target} credits\n"
-                f"⏰ Reset: {self.state['daily_start_time'].strftime('%I:%M %p IST')}\n"
-                f"🚀 Auto-resuming..."
-            )
-            self.send_telegram(reset_message)
-            return True
+    # ==================== COOKIE MANAGEMENT ====================
+    async def save_cookies(self):
+        """Save cookies to file"""
+        try:
+            if self.page and self.state['is_logged_in']:
+                cookies = await self.page.context.cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f, indent=2)
+                self.logger.info("💾 Cookies saved successfully")
+                return True
+        except Exception as e:
+            self.logger.warning(f"Could not save cookies: {e}")
         return False
 
-    def get_time_until_reset(self):
-        """Get time until reset"""
-        ist_now = self.get_ist_time()
-        reset_time = self.state['daily_start_time']
-        time_left = reset_time - ist_now
-        
-        hours = int(time_left.total_seconds() // 3600)
-        minutes = int((time_left.total_seconds() % 3600) // 60)
-        return hours, minutes
-
-    # ==================== DAILY TARGET SYSTEM ====================
-    def set_daily_target(self, target_credits):
-        """Set daily target"""
-        if target_credits < 100:
-            return "❌ Target must be at least 100 credits"
-        
-        self.state['daily_target'] = target_credits
-        self.check_daily_reset()
-        
-        credits_per_hour = 250
-        hours_needed = target_credits / credits_per_hour
-        reset_hours, reset_minutes = self.get_time_until_reset()
-        
-        response = (
-            f"🎯 <b>DAILY TARGET SET</b>\n"
-            f"💎 Goal: {target_credits} credits\n"
-            f"📊 Progress: {self.state['credits_earned_today']}/{target_credits}\n"
-            f"⏰ Estimated: {hours_needed:.1f} hours\n"
-            f"🕒 Reset in: {reset_hours}h {reset_minutes}m\n"
-            f"🌅 Reset at: 5:30 AM IST"
-        )
-        
-        self.logger.info(f"Target set: {target_credits} credits")
-        return response
-
-    def update_credits_earned(self):
-        """Update credit tracking"""
-        self.check_daily_reset()
-        
-        self.state['credits_earned_today'] += 1
-        
-        # Record session history
-        session_record = {
-            'timestamp': self.get_ist_time().strftime('%H:%M IST'),
-            'credits': 1,
-            'total_earned': self.state['credits_earned_today']
-        }
-        self.state['session_history'].append(session_record)
-        
-        if len(self.state['session_history']) > 10:
-            self.state['session_history'] = self.state['session_history'][-10:]
-        
-        # Check if target reached
-        if self.state['credits_earned_today'] >= self.state['daily_target']:
-            self.state['is_paused'] = True
-            self.logger.info(f"🎉 TARGET REACHED! {self.state['credits_earned_today']}/{self.state['daily_target']}")
-            
-            completion_message = (
-                f"🎉 <b>DAILY TARGET ACHIEVED!</b>\n"
-                f"💎 Earned: {self.state['credits_earned_today']} credits\n"
-                f"🎯 Target: {self.state['daily_target']} credits\n"
-                f"⏰ Time: {self.get_ist_time().strftime('%I:%M %p IST')}\n"
-                f"⏸️ Auto-paused until tomorrow"
-            )
-            self.send_telegram(completion_message)
-            return True
+    async def load_cookies(self):
+        """Load cookies from file"""
+        try:
+            if os.path.exists(self.cookies_file) and self.page:
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                
+                await self.page.context.clear_cookies()
+                await self.page.context.add_cookies(cookies)
+                
+                self.logger.info(f"🔑 Loaded {len(cookies)} cookies from file")
+                return True
+        except Exception as e:
+            self.logger.warning(f"Could not load cookies: {e}")
         
         return False
 
-    # ==================== ULTIMATE BROWSER MANAGEMENT ====================
+    async def import_cookies_from_json(self, cookie_json):
+        """Import cookies from JSON string"""
+        try:
+            cookies = json.loads(cookie_json)
+            await self.page.context.clear_cookies()
+            await self.page.context.add_cookies(cookies)
+            
+            # Save to file for persistence
+            with open(self.cookies_file, 'w') as f:
+                json.dump(cookies, f, indent=2)
+            
+            self.logger.info(f"✅ Imported {len(cookies)} cookies")
+            self.send_telegram(f"🍪 <b>Cookies Imported!</b>\nLoaded {len(cookies)} cookies")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Cookie import failed: {e}")
+            self.send_telegram(f"❌ <b>Cookie Import Failed</b>\nError: {str(e)}")
+            return False
+
+    async def restore_session_with_cookies(self):
+        """Try to restore session using cookies"""
+        self.logger.info("🔄 Attempting session restoration with cookies...")
+        
+        # Method 1: Load from file
+        if await self.load_cookies():
+            try:
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await asyncio.sleep(3)
+                
+                current_url = self.page.url.lower()
+                if "surf" in current_url or "dashboard" in current_url:
+                    self.state['is_logged_in'] = True
+                    self.logger.info("✅ Session restored via cookies!")
+                    return True
+                else:
+                    self.logger.warning("❌ Cookies loaded but session invalid")
+            except Exception as e:
+                self.logger.warning(f"Cookie restoration failed: {e}")
+        
+        return False
+
+    async def send_cookies_report(self):
+        """Send current cookies to Telegram"""
+        try:
+            if not self.page:
+                return "❌ Browser not running"
+            
+            cookies = await self.page.context.cookies()
+            if not cookies:
+                return "❌ No cookies found"
+            
+            cookie_info = f"🍪 <b>Current Session Cookies</b>\n"
+            cookie_info += f"📦 Total Cookies: {len(cookies)}\n\n"
+            
+            for i, cookie in enumerate(cookies[:8]):  # Show first 8 cookies
+                cookie_info += f"<b>Cookie {i+1}:</b>\n"
+                cookie_info += f"Name: <code>{cookie.get('name', 'N/A')}</code>\n"
+                cookie_info += f"Value: <code>{cookie.get('value', 'N/A')[:50]}...</code>\n"
+                cookie_info += f"Domain: {cookie.get('domain', 'N/A')}\n\n"
+            
+            if len(cookies) > 8:
+                cookie_info += f"... and {len(cookies) - 8} more cookies\n"
+            
+            return cookie_info
+            
+        except Exception as e:
+            return f"❌ Cookie export failed: {str(e)}"
+
+    # ==================== PLAYWRIGHT SETUP ====================
     async def setup_playwright(self):
-        """Setup Playwright perfectly"""
+        """Setup Playwright"""
         self.logger.info("Setting up Playwright...")
         
         try:
-            if self.playwright:
-                await self.playwright.stop()
-            
             self.playwright = await async_playwright().start()
             
             self.browser = await self.playwright.firefox.launch(
@@ -261,7 +217,6 @@ class UltimateProvenSolver:
                     '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
                 ]
             )
             
@@ -271,19 +226,293 @@ class UltimateProvenSolver:
             )
             
             self.page = await context.new_page()
+            
             self.page.set_default_timeout(30000)
             self.page.set_default_navigation_timeout(45000)
             
-            self.state['browser_restarts'] += 1
-            self.logger.info("✅ Playwright started successfully")
+            self.logger.info("Playwright started successfully!")
             return True
             
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
             return False
 
+    async def smart_delay_async(self):
+        """Async version of smart delay"""
+        if CONFIG['random_delay']:
+            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
+        else:
+            delay = CONFIG['base_delay']
+        
+        await asyncio.sleep(delay)
+        return delay
+
+    # ==================== ULTIMATE LOGIN WITH ALL FALLBACKS ====================
+    async def ultimate_login(self):
+        """ULTIMATE LOGIN WITH EVERY POSSIBLE FALLBACK"""
+        try:
+            self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
+            
+            login_url = "https://adsha.re/login"
+            await self.page.goto(login_url, wait_until='networkidle')
+            await self.page.wait_for_selector("body")
+            
+            await self.smart_delay_async()
+            
+            # ==================== METHOD 1: FORM ANALYSIS ====================
+            page_content = await self.page.content()
+            soup = BeautifulSoup(page_content, 'html.parser')
+            
+            # Find ALL forms
+            all_forms = soup.find_all('form')
+            self.logger.info(f"Found {len(all_forms)} forms")
+            
+            form = soup.find('form', {'name': 'login'})
+            if not form:
+                self.logger.warning("No login form found by name, trying first form")
+                form = all_forms[0] if all_forms else None
+            
+            if not form:
+                self.logger.error("No forms found at all!")
+                return False
+            
+            # ==================== METHOD 2: PASSWORD FIELD DISCOVERY ====================
+            password_field_name = None
+            
+            # Method 2A: Find by value="Password"
+            for field in form.find_all('input'):
+                field_name = field.get('name', '')
+                field_value = field.get('value', '')
+                
+                if field_value == 'Password' and field_name != 'mail' and field_name:
+                    password_field_name = field_name
+                    self.logger.info(f"Found password field by value: {password_field_name}")
+                    break
+            
+            # Method 2B: Find by type="password"
+            if not password_field_name:
+                password_fields = form.find_all('input', {'type': 'password'})
+                if password_fields:
+                    password_field_name = password_fields[0].get('name')
+                    self.logger.info(f"Found password field by type: {password_field_name}")
+            
+            # Method 2C: Find any non-email field
+            if not password_field_name:
+                for field in form.find_all('input'):
+                    field_name = field.get('name', '')
+                    field_type = field.get('type', '')
+                    if field_name and field_name != 'mail' and field_type != 'email':
+                        password_field_name = field_name
+                        self.logger.info(f"Found password field by exclusion: {password_field_name}")
+                        break
+            
+            # Method 2D: Find second input field
+            if not password_field_name:
+                inputs = form.find_all('input')
+                if len(inputs) >= 2:
+                    password_field_name = inputs[1].get('name')
+                    self.logger.info(f"Found password field by position: {password_field_name}")
+            
+            if not password_field_name:
+                self.logger.error("Could not find password field by any method")
+                return False
+            
+            # ==================== METHOD 3: FILL EMAIL - ALL METHODS ====================
+            self.logger.info("Filling email...")
+            
+            email_selectors = [
+                "input[name='mail']",
+                "input[type='email']", 
+                "input[placeholder*='email' i]",
+                "input[placeholder*='Email' i]",
+                "input[name*='mail' i]",
+                "input[name*='email' i]",
+                "input:first-of-type",
+                "input:nth-of-type(1)"
+            ]
+            
+            email_filled = False
+            for selector in email_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.fill(selector, "")
+                        await self.page.fill(selector, CONFIG['email'])
+                        self.logger.info(f"Email filled with: {selector}")
+                        email_filled = True
+                        break
+                except:
+                    continue
+            
+            if not email_filled:
+                self.logger.error("All email filling methods failed")
+                return False
+            
+            await self.smart_delay_async()
+            
+            # ==================== METHOD 4: FILL PASSWORD - ALL METHODS ====================
+            self.logger.info("Filling password...")
+            
+            password_selectors = [
+                f"input[name='{password_field_name}']",
+                "input[type='password']",
+                "input[placeholder*='password' i]",
+                "input[placeholder*='Password' i]",
+                "input:nth-of-type(2)",
+                "input:last-of-type"
+            ]
+            
+            password_filled = False
+            for selector in password_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.fill(selector, "")
+                        await self.page.fill(selector, CONFIG['password'])
+                        self.logger.info(f"Password filled with: {selector}")
+                        password_filled = True
+                        break
+                except:
+                    continue
+            
+            if not password_filled:
+                self.logger.error("All password filling methods failed")
+                return False
+            
+            await self.smart_delay_async()
+            
+            # ==================== METHOD 5: SUBMIT FORM - ALL METHODS ====================
+            self.logger.info("Submitting form...")
+            
+            login_selectors = [
+                "button[type='submit']",
+                "input[type='submit']", 
+                "button",
+                "input[value*='Login' i]",
+                "input[value*='Sign' i]",
+                "button:has-text('Login')",
+                "button:has-text('Sign')",
+                "input[value*='Log']",
+                "input[value*='login']",
+                "form button",
+                "form input[type='submit']"
+            ]
+            
+            login_clicked = False
+            
+            # Method 5A: Try all click selectors
+            for selector in login_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.click(selector)
+                        self.logger.info(f"Login clicked with: {selector}")
+                        login_clicked = True
+                        break
+                except:
+                    continue
+            
+            # Method 5B: JavaScript form submission
+            if not login_clicked:
+                try:
+                    await self.page.evaluate("""() => {
+                        const form = document.querySelector("form");
+                        if (form) form.submit();
+                    }""")
+                    self.logger.info("Form submitted via JavaScript")
+                    login_clicked = True
+                except:
+                    pass
+            
+            # Method 5C: Press Enter in password field
+            if not login_clicked:
+                try:
+                    password_selector = f"input[name='{password_field_name}']"
+                    await self.page.click(password_selector)
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Enter key pressed in password field")
+                    login_clicked = True
+                except:
+                    pass
+            
+            # Method 5D: Click anywhere and press Enter
+            if not login_clicked:
+                try:
+                    await self.page.click('body')
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Enter key pressed on body")
+                    login_clicked = True
+                except:
+                    pass
+            
+            if not login_clicked:
+                self.logger.error("All login submission methods failed")
+                return False
+            
+            # ==================== METHOD 6: WAIT AND VERIFY ====================
+            await self.smart_delay_async()
+            await asyncio.sleep(8)
+            
+            # Check multiple success indicators
+            current_url = self.page.url.lower()
+            page_title = await self.page.title()
+            
+            self.logger.info(f"After login - URL: {current_url}, Title: {page_title}")
+            
+            # Navigate to surf to verify
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await self.smart_delay_async()
+            
+            final_url = self.page.url.lower()
+            self.logger.info(f"Final URL: {final_url}")
+            
+            # Check if login successful
+            if "surf" in final_url or "dashboard" in final_url:
+                self.logger.info("🎉 LOGIN SUCCESSFUL!")
+                self.state['is_logged_in'] = True
+                await self.save_cookies()
+                self.send_telegram("✅ <b>ULTIMATE LOGIN SUCCESSFUL!</b>")
+                return True
+            elif "login" in final_url:
+                self.logger.error("❌ LOGIN FAILED - Still on login page")
+                return False
+            else:
+                self.logger.warning("⚠️ On unexpected page, but might be logged in")
+                self.state['is_logged_in'] = True
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"❌ ULTIMATE LOGIN ERROR: {e}")
+            return False
+
+    async def send_screenshot(self, caption="🖥️ Screenshot"):
+        """Send screenshot to Telegram"""
+        if not self.page or not self.telegram_chat_id:
+            return "❌ Browser not running or Telegram not configured"
+        
+        try:
+            screenshot_path = "/tmp/screenshot.png"
+            await self.page.screenshot(path=screenshot_path)
+            
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
+            
+            with open(screenshot_path, 'rb') as photo:
+                files = {'photo': photo}
+                data = {
+                    'chat_id': self.telegram_chat_id,
+                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
+                }
+                
+                response = requests.post(url, files=files, data=data, timeout=30)
+            
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+                
+            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
+                
+        except Exception as e:
+            return f"❌ Screenshot error: {str(e)}"
+
+    # ==================== GAME SOLVING LOGIC ====================
     def is_browser_alive(self):
-        """Check browser health"""
+        """Check if browser is alive"""
         try:
             return (self.page and 
                    not self.page.is_closed() and 
@@ -292,203 +521,33 @@ class UltimateProvenSolver:
         except Exception:
             return False
 
-    async def restart_browser(self):
-        """Restart browser"""
-        self.logger.info("🔄 Restarting browser...")
-        
-        try:
-            if self.browser:
-                await self.browser.close()
-            if self.playwright:
-                await self.playwright.stop()
-            
-            if await self.setup_playwright():
-                if await self.restore_session():
-                    return True
-                elif await self.proven_login():
-                    return True
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Browser restart failed: {e}")
-            return False
-
-    # ==================== ULTIMATE SESSION MANAGEMENT ====================
-    async def save_cookies(self):
-        """Save cookies"""
-        try:
-            if self.page and self.state['is_logged_in']:
-                cookies = await self.page.context.cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f)
-                self.logger.info("💾 Cookies saved")
-        except Exception as e:
-            self.logger.warning(f"Cookie save: {e}")
-
-    async def load_cookies(self):
-        """Load cookies"""
-        try:
-            if os.path.exists(self.cookies_file) and self.page:
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                
-                await self.page.context.clear_cookies()
-                await self.page.context.add_cookies(cookies)
-                
-                self.logger.info("🔑 Cookies loaded")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Cookie load: {e}")
-        
-        return False
-
-    async def restore_session(self):
-        """Restore session"""
-        self.logger.info("Attempting session restoration...")
-        
-        # Method 1: Load cookies and check
-        if await self.load_cookies():
-            try:
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                await asyncio.sleep(3)
-                
-                current_url = self.page.url.lower()
-                if "surf" in current_url or "dashboard" in current_url:
-                    self.state['is_logged_in'] = True
-                    self.logger.info("✅ Session restored via cookies")
-                    return True
-            except Exception as e:
-                self.logger.warning(f"Cookie restoration failed: {e}")
-        
-        # Method 2: Direct navigation
-        try:
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            await asyncio.sleep(3)
-            
-            current_url = self.page.url.lower()
-            if "surf" in current_url or "dashboard" in current_url:
-                self.state['is_logged_in'] = True
-                self.logger.info("✅ Session restored via direct navigation")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Direct navigation failed: {e}")
-        
-        self.logger.info("❌ Session restoration failed")
-        return False
-
-    # ==================== PROVEN LOGIN METHOD ====================
-    async def proven_login(self):
-        """PROVEN WORKING LOGIN METHOD"""
-        try:
-            self.logger.info("🚀 Starting proven login...")
-            
-            login_url = "https://adsha.re/login"
-            await self.page.goto(login_url, wait_until='networkidle')
-            await self.page.wait_for_selector("body")
-            
-            await self.smart_delay()
-            
-            # Parse form to find password field
-            page_content = await self.page.content()
-            soup = BeautifulSoup(page_content, 'html.parser')
-            
-            form = soup.find('form', {'name': 'login'})
-            if not form:
-                self.logger.error("No login form found")
-                return False
-            
-            # Find password field name
-            password_field_name = None
-            for field in form.find_all('input'):
-                field_name = field.get('name', '')
-                field_value = field.get('value', '')
-                
-                if field_value == 'Password' and field_name != 'mail' and field_name:
-                    password_field_name = field_name
-                    break
-            
-            if not password_field_name:
-                self.logger.error("No password field found")
-                return False
-            
-            self.logger.info(f"🔑 Password field: {password_field_name}")
-            
-            # Fill email
-            await self.page.fill("input[name='mail']", CONFIG['email'])
-            await self.smart_delay()
-            
-            # Fill password
-            password_selector = f"input[name='{password_field_name}']"
-            await self.page.fill(password_selector, CONFIG['password'])
-            await self.smart_delay()
-            
-            # Submit form via JavaScript (PROVEN METHOD)
-            await self.page.evaluate("""() => {
-                const form = document.querySelector("form[name='login']");
-                if (form) form.submit();
-            }""")
-            
-            await asyncio.sleep(8)  # Wait for login
-            
-            # Verify login
-            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-            await self.smart_delay()
-            
-            current_url = self.page.url.lower()
-            if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("🎉 Login successful!")
-                self.state['is_logged_in'] = True
-                await self.save_cookies()
-                self.send_telegram("✅ <b>Proven Login Successful!</b>")
-                return True
-            else:
-                if "login" in current_url:
-                    self.logger.error("❌ Login failed - still on login page")
-                    # Send screenshot for debugging
-                    await self.send_screenshot("❌ Login Failed - Still on Login Page")
-                    return False
-                else:
-                    self.logger.info("⚠️ Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    await self.save_cookies()
-                    return True
-                
-        except Exception as e:
-            self.logger.error(f"❌ Login error: {e}")
-            return False
-
-    # ==================== ULTIMATE GAME SOLVING ====================
-    async def smart_delay(self):
-        """Smart delay"""
-        delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
-        await asyncio.sleep(delay)
-        return delay
-
     async def ensure_correct_page(self):
-        """Ensure correct page"""
+        """Ensure we're on the correct surf page"""
         if not self.is_browser_alive():
+            self.logger.error("Browser dead during page check")
             return False
             
         try:
             current_url = self.page.url.lower()
             
             if "login" in current_url:
-                self.logger.info("Auto-login triggered")
-                return await self.proven_login()
+                self.logger.info("Auto-login: redirected to login")
+                return await self.ultimate_login()
             
             if "surf" not in current_url and "adsha.re" in current_url:
+                self.logger.info("Redirecting to surf page...")
                 await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
-                await self.smart_delay()
+                await self.smart_delay_async()
                 return True
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Page check error: {e}")
+            self.logger.error(f"Page navigation error: {e}")
             return False
 
     def calculate_similarity(self, str1, str2):
-        """Calculate similarity"""
+        """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
             return 0.0
         
@@ -497,7 +556,7 @@ class UltimateProvenSolver:
         return common_chars / max_len if max_len > 0 else 0.0
 
     async def compare_symbols(self, question_svg, answer_svg):
-        """Compare symbols"""
+        """Compare SVG symbols"""
         try:
             question_content = await question_svg.inner_html()
             answer_content = await answer_svg.inner_html()
@@ -525,11 +584,11 @@ class UltimateProvenSolver:
             return {'match': should_match, 'confidence': similarity, 'exact': False}
             
         except Exception as e:
-            self.logger.warning(f"Symbol comparison: {e}")
+            self.logger.warning(f"Symbol comparison error: {e}")
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
     async def find_best_match(self, question_svg, links):
-        """Find best match"""
+        """Find best matching symbol"""
         best_match = None
         highest_confidence = 0
         exact_matches = []
@@ -565,414 +624,168 @@ class UltimateProvenSolver:
         
         return None
 
-    async def human_like_click(self, element):
-        """Human-like click"""
-        try:
-            pre_click_delay = random.uniform(0.1, 0.3)
-            await asyncio.sleep(pre_click_delay)
-            
-            await element.hover()
-            await asyncio.sleep(0.1)
-            
-            await element.click()
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Click failed: {e}")
-            return False
-
     async def solve_symbol_game(self):
-        """Solve symbol game"""
-        if not self.state['is_running'] or self.state['is_paused']:
+        """Main game solving logic"""
+        if not self.state['is_running']:
             return False
         
         if not self.is_browser_alive():
-            self.logger.error("Browser not alive")
+            self.logger.error("Browser dead during game solving")
             return False
             
         try:
             if not await self.ensure_correct_page():
+                self.logger.info("Not on correct page, redirecting...")
                 await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
                 if not await self.ensure_correct_page():
                     return False
             
-            await asyncio.sleep(1)
-            
             question_svg = await self.page.wait_for_selector("svg", timeout=15000)
+            
             if not question_svg:
-                self.logger.info("Waiting for game...")
+                self.logger.info("Waiting for game to load...")
                 return False
             
             links = await self.page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
+            
             if not links:
-                self.logger.info("No answer links")
+                self.logger.info("No answer links found")
                 return False
             
             best_match = await self.find_best_match(question_svg, links)
             
             if best_match:
-                if await self.human_like_click(best_match['link']):
-                    self.state['total_solved'] += 1
-                    self.state['consecutive_fails'] = 0
-                    self.state['games_since_last_break'] += 1
-                    
-                    # Update credits and check target
-                    target_reached = self.update_credits_earned()
-                    
-                    match_type = "EXACT" if best_match['exact'] else "FUZZY"
-                    self.logger.info(f"✅ {match_type} Match! Total: {self.state['total_solved']}, Credits: {self.state['credits_earned_today']}")
-                    
-                    # Save cookies every 10 games
-                    if self.state['total_solved'] % 10 == 0:
-                        await self.save_cookies()
-                    
-                    # Stop if target reached
-                    if target_reached:
-                        return True
-                    
-                    await self.smart_delay()
-                    return True
-            
-            self.logger.info("No good match found")
-            self.state['consecutive_fails'] += 1
-            return False
+                await best_match['link'].click()
+                self.state['total_solved'] += 1
+                self.state['consecutive_fails'] = 0
+                match_type = "EXACT" if best_match['exact'] else "FUZZY"
+                self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}")
+                return True
+            else:
+                self.logger.info("No good match found")
+                self.handle_consecutive_failures()
+                return False
             
         except Exception as e:
-            self.logger.error(f"Game solving error: {e}")
-            self.state['consecutive_fails'] += 1
+            self.logger.error(f"Solver error: {e}")
+            self.handle_consecutive_failures()
             return False
 
-    # ==================== ULTIMATE BREAK SYSTEM ====================
-    async def take_break_if_needed(self):
-        """Take break if needed"""
-        self.state['games_since_last_break'] += 1
+    # ==================== ERROR HANDLING ====================
+    def handle_consecutive_failures(self):
+        """Handle consecutive failures"""
+        self.state['consecutive_fails'] += 1
+        current_fails = self.state['consecutive_fails']
         
-        # Regular break every 50 games
-        if self.state['games_since_last_break'] >= CONFIG['games_between_breaks']:
-            break_minutes = random.randint(CONFIG['break_min_minutes'], CONFIG['break_max_minutes'])
-            self.logger.info(f"☕ Taking break: {break_minutes} minutes")
-            self.send_telegram(f"☕ <b>Taking Break</b>\n⏰ {break_minutes} minutes")
-            
-            self.state['games_since_last_break'] = 0
-            await asyncio.sleep(break_minutes * 60)
-            return True
+        self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         
-        # Random long break (2% chance)
-        if random.randint(1, 100) <= CONFIG['long_break_chance']:
-            break_minutes = random.randint(CONFIG['long_break_min_minutes'], CONFIG['long_break_max_minutes'])
-            self.logger.info(f"🌙 Taking long break: {break_minutes} minutes")
-            self.send_telegram(f"🌙 <b>Long Break</b>\n⏰ {break_minutes} minutes")
-            
-            self.state['games_since_last_break'] = 0
-            await asyncio.sleep(break_minutes * 60)
-            return True
-        
-        return False
-
-    # ==================== ULTIMATE MONITORING ====================
-    async def extract_credits(self):
-        """Extract credits"""
         if not self.is_browser_alive():
-            return "BROWSER_DEAD"
+            return
         
-        try:
-            await self.page.reload()
-            await asyncio.sleep(5)
-            page_source = await self.page.content()
+        if current_fails >= CONFIG['refresh_page_after_failures']:
+            self.logger.info("Refreshing page...")
+            self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
             
-            credit_patterns = [
-                r'(\d{1,3}(?:,\d{3})*)\s*Credits',
-                r'Credits.*?(\d{1,3}(?:,\d{3})*)',
-                r'>\s*(\d[\d,]*)\s*Credits<',
-            ]
-            
-            for pattern in credit_patterns:
-                matches = re.findall(pattern, page_source, re.IGNORECASE)
-                if matches:
-                    return f"{matches[0]} Credits"
-            
-            return "CREDITS_NOT_FOUND"
-            
-        except Exception as e:
-            return f"ERROR: {str(e)}"
-
-    async def monitoring_loop(self):
-        """Monitoring loop"""
-        self.logger.info("Starting monitoring...")
-        
-        while self.state['is_running']:
             try:
-                if self.is_browser_alive():
-                    credits = await self.extract_credits()
-                    self.state['last_credits'] = credits
-                    
-                    # Send periodic report every 30 minutes
-                    report = self.get_detailed_status()
-                    self.send_telegram(report)
-                
-                # Sleep for 30 minutes
-                for _ in range(CONFIG['credit_check_interval']):
-                    if not self.state['is_running']:
-                        break
-                    await asyncio.sleep(1)
-                    
+                asyncio.create_task(self.page.reload())
+                self.state['consecutive_fails'] = 0
             except Exception as e:
-                self.logger.error(f"Monitoring error: {e}")
-                await asyncio.sleep(60)
+                self.logger.error(f"Page refresh failed: {e}")
         
-        self.logger.info("Monitoring stopped")
+        elif current_fails >= CONFIG['max_consecutive_failures']:
+            self.logger.error("Too many failures! Stopping...")
+            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
+            self.stop()
 
-    # ==================== ULTIMATE STATUS SYSTEM ====================
-    def get_detailed_status(self):
-        """Get detailed status"""
-        self.check_daily_reset()
-        
-        target = self.state['daily_target']
-        earned = self.state['credits_earned_today']
-        progress_percent = (earned / target * 100) if target > 0 else 0
-        reset_hours, reset_minutes = self.get_time_until_reset()
-        
-        status = f"""
-📊 <b>ULTIMATE STATUS REPORT</b>
-⏰ Time: {self.get_ist_time().strftime('%I:%M %p IST')}
-💎 Credits: {earned}/{target} ({progress_percent:.1f}%)
-🎯 Daily Target: {target} credits
-🎮 Games Solved: {self.state['total_solved']}
-💰 Balance: {self.state['last_credits']}
-🕒 Reset in: {reset_hours}h {reset_minutes}m
-🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-🔄 Status: {'PAUSED' if self.state['is_paused'] else 'RUNNING'}
-⚠️ Fails: {self.state['consecutive_fails']}
-🖥️ Browser: {'✅' if self.is_browser_alive() else '❌'}
-        """
-        
-        return status
-
-    def get_progress_status(self):
-        """Get progress status"""
-        self.check_daily_reset()
-        
-        target = self.state['daily_target']
-        earned = self.state['credits_earned_today']
-        progress_percent = (earned / target * 100) if target > 0 else 0
-        reset_hours, reset_minutes = self.get_time_until_reset()
-        
-        progress = f"""
-📈 <b>DAILY PROGRESS</b>
-💎 Earned: {earned} / {target} credits
-📊 Progress: {progress_percent:.1f}%
-⏰ Reset in: {reset_hours}h {reset_minutes}m
-🌅 Reset at: 5:30 AM IST
-🎮 Games Today: {self.state['total_solved']}
-🔄 Status: {'⏸️ PAUSED' if self.state['is_paused'] else '▶️ RUNNING'}
-        """
-        
-        if self.state['session_history']:
-            progress += "\n\n<b>Recent Activity:</b>"
-            for session in self.state['session_history'][-5:]:
-                progress += f"\n{session['timestamp']}: +{session['credits']} credits"
-        
-        return progress
-
-    async def send_cookies_report(self):
-        """Send cookies report"""
-        try:
-            if not self.page or not self.state['is_logged_in']:
-                return "❌ No active session"
-            
-            cookies = await self.page.context.cookies()
-            if not cookies:
-                return "❌ No cookies found"
-            
-            # Save cookies
-            with open(self.cookies_file, 'w') as f:
-                json.dump(cookies, f, indent=2)
-            
-            # Create report
-            cookie_info = f"🍪 <b>Session Cookies</b>\n"
-            cookie_info += f"📦 Total Cookies: {len(cookies)}\n"
-            cookie_info += f"⏰ Saved: {self.get_ist_time().strftime('%H:%M IST')}\n\n"
-            
-            for i, cookie in enumerate(cookies[:5]):
-                cookie_info += f"<b>Cookie {i+1}:</b>\n"
-                cookie_info += f"Name: {cookie.get('name', 'N/A')}\n"
-                cookie_info += f"Domain: {cookie.get('domain', 'N/A')}\n\n"
-            
-            if len(cookies) > 5:
-                cookie_info += f"... and {len(cookies) - 5} more cookies\n"
-            
-            cookie_info += "💾 <i>Cookies saved for recovery</i>"
-            
-            return cookie_info
-            
-        except Exception as e:
-            return f"❌ Cookie export failed: {str(e)}"
-
-    async def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot"""
-        if not self.page or not self.telegram_chat_id:
-            return "❌ Browser not running"
-        
-        try:
-            screenshot_path = "/tmp/screenshot.png"
-            await self.page.screenshot(path=screenshot_path)
-            
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
-            
-            with open(screenshot_path, 'rb') as photo:
-                files = {'photo': photo}
-                data = {
-                    'chat_id': self.telegram_chat_id,
-                    'caption': f'{caption} - {self.get_ist_time().strftime("%H:%M IST")}'
-                }
-                
-                response = requests.post(url, files=files, data=data, timeout=30)
-            
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-                
-            return "✅ Screenshot sent!" if response.status_code == 200 else "❌ Screenshot failed"
-                
-        except Exception as e:
-            return f"❌ Screenshot error: {str(e)}"
-
-    # ==================== ULTIMATE MAIN SOLVER ====================
+    # ==================== MAIN SOLVER LOOP ====================
     async def solver_loop(self):
-        """Main solver loop"""
-        self.logger.info("🚀 Starting ultimate solver loop...")
+        """Main solving loop"""
+        self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
         if not await self.setup_playwright():
-            self.logger.error("Playwright setup failed")
+            self.logger.error("Cannot start - Playwright setup failed")
             self.stop()
             return
         
-        # Try session restoration first
-        if not await self.restore_session():
-            if not await self.proven_login():
-                self.logger.error("All login methods failed")
-                self.stop()
-                return
+        # TRY COOKIE RESTORATION FIRST
+        if await self.restore_session_with_cookies():
+            self.logger.info("✅ Started with cookie session!")
+        # If cookies fail, try login
+        elif not await self.ultimate_login():
+            self.logger.error("Cannot start - All login methods failed")
+            self.stop()
+            return
         
+        consecutive_fails = 0
         cycle_count = 0
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
-                # Check if paused (target reached)
-                if self.state['is_paused']:
-                    await asyncio.sleep(60)
-                    continue
-                
-                # Check daily reset
-                if cycle_count % 10 == 0:
-                    self.check_daily_reset()
-                
-                # Browser health check
                 if not self.is_browser_alive():
-                    self.logger.warning("Browser health check failed")
-                    if not await self.restart_browser():
-                        self.logger.error("Browser restart failed")
-                        self.stop()
-                        break
+                    self.logger.error("Browser dead, stopping solver")
+                    self.stop()
+                    break
                 
-                # Take breaks if needed
-                if await self.take_break_if_needed():
-                    continue
-                
-                # Refresh page every 15 minutes
                 if cycle_count % 30 == 0 and cycle_count > 0:
                     await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
-                # Memory cleanup
                 if cycle_count % 50 == 0:
                     gc.collect()
                 
-                # Solve game
                 game_solved = await self.solve_symbol_game()
                 
-                if not game_solved:
-                    await asyncio.sleep(5)
-                
-                # Handle consecutive failures
-                if self.state['consecutive_fails'] >= CONFIG['refresh_page_after_failures']:
-                    self.logger.info("Refreshing page due to failures")
-                    await self.page.reload()
-                    self.state['consecutive_fails'] = 0
+                if game_solved:
+                    consecutive_fails = 0
+                    await asyncio.sleep(3)
+                else:
+                    consecutive_fails += 1
                     await asyncio.sleep(5)
                 
                 cycle_count += 1
                     
             except Exception as e:
-                self.logger.error(f"Main loop error: {e}")
+                self.logger.error(f"Loop error: {e}")
+                consecutive_fails += 1
                 await asyncio.sleep(10)
         
         if self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
-            self.logger.error("Too many consecutive failures")
+            self.logger.error("Too many failures, stopping...")
             self.stop()
 
-    # ==================== ULTIMATE CONTROL METHODS ====================
+    # ==================== CONTROL METHODS ====================
     def start(self):
-        """Start solver"""
+        """Start the solver"""
         if self.state['is_running']:
             return "❌ Solver already running"
         
         self.state['is_running'] = True
-        self.state['is_paused'] = False
         self.state['consecutive_fails'] = 0
         
-        self.main_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.main_loop)
-        
         def run_solver():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                self.main_loop.run_until_complete(self.solver_loop())
+                loop.run_until_complete(self.solver_loop())
             except Exception as e:
                 self.logger.error(f"Solver loop error: {e}")
             finally:
-                try:
-                    if self.main_loop and not self.main_loop.is_closed():
-                        self.main_loop.close()
-                except:
-                    pass
+                loop.close()
         
         self.solver_thread = threading.Thread(target=run_solver)
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        # Start monitoring
-        def run_monitoring():
-            monitoring_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(monitoring_loop)
-            try:
-                monitoring_loop.run_until_complete(self.monitoring_loop())
-            except Exception as e:
-                self.logger.error(f"Monitoring loop error: {e}")
-            finally:
-                try:
-                    if monitoring_loop and not monitoring_loop.is_closed():
-                        monitoring_loop.close()
-                except:
-                    pass
-        
-        self.monitoring_thread = threading.Thread(target=run_monitoring)
-        self.monitoring_thread.daemon = True
-        self.monitoring_thread.start()
-        
-        self.logger.info("✅ ULTIMATE SOLVER STARTED!")
-        
-        start_message = "🚀 <b>ULTIMATE PROVEN SOLVER STARTED!</b>"
-        if self.state['daily_target'] > 0:
-            start_message += f"\n🎯 Target: {self.state['daily_target']} credits"
-            start_message += f"\n💎 Earned: {self.state['credits_earned_today']} credits"
-        
-        self.send_telegram(start_message)
+        self.logger.info("ULTIMATE solver started successfully!")
+        self.send_telegram("🚀 <b>ULTIMATE Solver Started!</b>")
         return "✅ ULTIMATE solver started successfully!"
 
     def stop(self):
-        """Stop solver"""
+        """Stop the solver"""
         self.state['is_running'] = False
+        self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
         async def close_playwright():
@@ -982,29 +795,48 @@ class UltimateProvenSolver:
                 if self.playwright:
                     await self.playwright.stop()
             except Exception as e:
-                self.logger.warning(f"Playwright close: {e}")
+                self.logger.warning(f"Playwright close warning: {e}")
         
-        try:
-            if self.main_loop and not self.main_loop.is_closed():
-                asyncio.run_coroutine_threadsafe(close_playwright(), self.main_loop)
-        except Exception as e:
-            self.logger.warning(f"Stop cleanup: {e}")
+        def run_cleanup():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(close_playwright())
+                loop.close()
+            except Exception as e:
+                self.logger.warning(f"Cleanup warning: {e}")
         
-        self.logger.info("🛑 ULTIMATE SOLVER STOPPED!")
+        cleanup_thread = threading.Thread(target=run_cleanup)
+        cleanup_thread.daemon = True
+        cleanup_thread.start()
+        
+        self.logger.info("ULTIMATE solver stopped")
         self.send_telegram("🛑 <b>ULTIMATE Solver Stopped!</b>")
         return "✅ ULTIMATE solver stopped successfully!"
 
-# ==================== ULTIMATE TELEGRAM BOT ====================
-class UltimateTelegramBot:
+    def status(self):
+        """Get status"""
+        return f"""
+📊 <b>Status Report</b>
+⏰ {time.strftime('%H:%M:%S')}
+🔄 Status: {self.state['status']}
+🎯 Games Solved: {self.state['total_solved']}
+💰 Last Credits: {self.state['last_credits']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+        """
+
+# Telegram Bot
+class TelegramBot:
     def __init__(self):
-        self.solver = UltimateProvenSolver()
+        self.solver = UltimateSymbolGameSolver()
         self.logger = logging.getLogger(__name__)
     
     def handle_updates(self):
         """Handle Telegram updates"""
         last_update_id = None
         
-        self.logger.info("Starting ultimate Telegram bot...")
+        self.logger.info("Starting Telegram bot...")
         
         while True:
             try:
@@ -1014,19 +846,17 @@ class UltimateTelegramBot:
                 
                 if response.status_code == 200:
                     updates = response.json()
-                    if updates.get('result'):
+                    if updates['result']:
                         for update in updates['result']:
                             last_update_id = update['update_id'] + 1
                             self.process_message(update)
-                else:
-                    time.sleep(5)
                 
             except Exception as e:
                 self.logger.error(f"Telegram error: {e}")
                 time.sleep(5)
     
     def process_message(self, update):
-        """Process message"""
+        """Process Telegram message"""
         if 'message' not in update or 'text' not in update['message']:
             return
         
@@ -1043,26 +873,35 @@ class UltimateTelegramBot:
         elif text.startswith('/stop'):
             response = self.solver.stop()
         elif text.startswith('/status'):
-            response = self.solver.get_detailed_status()
-        elif text.startswith('/progress'):
-            response = self.solver.get_progress_status()
-        elif text.startswith('/target'):
-            try:
-                target = int(text.split()[1])
-                response = self.solver.set_daily_target(target)
-            except:
-                response = "❌ Usage: /target 3000"
-        elif text.startswith('/credits'):
-            async def get_credits():
-                return await self.solver.extract_credits()
+            response = self.solver.status()
+        elif text.startswith('/cookies'):
+            async def get_cookies():
+                return await self.solver.send_cookies_report()
             try:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                credits = loop.run_until_complete(get_credits())
+                cookie_result = loop.run_until_complete(get_cookies())
                 loop.close()
-                response = f"💰 <b>Current Balance:</b> {credits}"
+                response = cookie_result
             except Exception as e:
-                response = f"❌ Credit check failed: {e}"
+                response = f"❌ Cookie export failed: {e}"
+        elif text.startswith('/import_cookies'):
+            # Extract JSON from message
+            cookie_json = text.replace('/import_cookies', '').strip()
+            if not cookie_json:
+                response = "❌ Please provide cookies JSON\nUsage: /import_cookies [JSON]"
+            else:
+                async def import_cookies():
+                    return await self.solver.import_cookies_from_json(cookie_json)
+                
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    success = loop.run_until_complete(import_cookies())
+                    loop.close()
+                    response = "✅ Cookies imported successfully! Restart bot with /start" if success else "❌ Cookie import failed"
+                except Exception as e:
+                    response = f"❌ Cookie import error: {e}"
         elif text.startswith('/screenshot'):
             async def take_screenshot():
                 return await self.solver.send_screenshot()
@@ -1074,53 +913,33 @@ class UltimateTelegramBot:
                 response = screenshot_result
             except Exception as e:
                 response = f"❌ Screenshot failed: {e}"
-        elif text.startswith('/cookies'):
-            async def export_cookies():
-                return await self.solver.send_cookies_report()
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                cookie_result = loop.run_until_complete(export_cookies())
-                loop.close()
-                response = cookie_result
-            except Exception as e:
-                response = f"❌ Cookie export failed: {e}"
-        elif text.startswith('/pause'):
-            self.solver.state['is_paused'] = True
-            response = "⏸️ <b>Solver Paused</b>\nUse /resume to continue"
-        elif text.startswith('/resume'):
-            self.solver.state['is_paused'] = False
-            response = "▶️ <b>Solver Resumed</b>"
         elif text.startswith('/help'):
             response = """
-🎯 <b>ULTIMATE PROVEN SOLVER COMMANDS</b>
+🤖 <b>AdShare ULTIMATE Solver Commands</b>
 
 /start - Start solver
-/stop - Stop solver
-/status - Detailed status
-/progress - Daily progress
-/target 3000 - Set daily credit goal
-/credits - Check balance
-/screenshot - Real-time screenshot
-/cookies - Export session cookies
-/pause - Pause solving
-/resume - Resume solving
-/help - Show this help
+/stop - Stop solver  
+/status - Check status
+/screenshot - Take screenshot
+/cookies - Show current cookies
+/import_cookies [JSON] - Import cookies
+/help - Show help
 
-<b>PROVEN FEATURES:</b>
-✅ Proven Login Method (100% Working)
-✅ Daily Credit Targets
-✅ IST Timezone (5:30 AM reset)
-✅ Cookie Management
-✅ Anti-Bot Protection
-✅ 24/7 Operation
-✅ Zero Bugs Guaranteed
+🍪 <b>Cookie Import Usage:</b>
+1. Get cookies from browser
+2. Send: /import_cookies [JSON_HERE]
+3. Restart with /start
+
+💡 <b>ULTIMATE FALLBACK + COOKIE IMPORT</b>
+🔐 12+ login methods + Cookie bypass
+🎯 Maximum compatibility
+🚀 Bypass login with cookies
             """
         
         if response:
             self.solver.send_telegram(response)
 
 if __name__ == '__main__':
-    bot = UltimateTelegramBot()
-    bot.logger.info("🎯 ULTIMATE PROVEN SOLVER READY!")
+    bot = TelegramBot()
+    bot.logger.info("AdShare ULTIMATE Solver started!")
     bot.handle_updates()
