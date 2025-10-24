@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 # Install geckodriver for Firefox
 RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux64.tar.gz \
     && tar -xzf geckodriver-v0.34.0-linux64.tar.gz -C /usr/local/bin/ \
-    && rm geckodriver-v0.34.0-linux64.tar.gz \
+    && rm geckodriver-v0.36.0-linux64.tar.gz \
     && chmod +x /usr/local/bin/geckodriver
 
 # Create app directory and download uBlock Origin
