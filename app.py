@@ -185,7 +185,7 @@ class UltimateAdshareBot:
     async def download_ublock(self):
         """Download and install uBlock Origin"""
         try:
-            ublock_url = "https://github.com/gorhill/uBlock/releases/download/1.56.0/uBlock0_1.56.0.firefox.signed.xpi"
+            ublock_url = "https://addons.mozilla.org/firefox/downloads/file/4598854/ublock_origin-1.67.0.xpi"
             os.makedirs(os.path.dirname(CONFIG['ublock_path']), exist_ok=True)
             xpi_path = f"{CONFIG['ublock_path']}.xpi"
             
