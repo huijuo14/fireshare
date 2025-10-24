@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - CREDIT GOAL EDITION
-DAILY TARGET SYSTEM + IST TIMING + ALL EXISTING FEATURES
+AdShare Symbol Game Solver - ULTIMATE EDITION
+ALL FEATURES + ENV VARIABLES + COOKIE MANAGEMENT
 """
 
 import os
@@ -18,29 +18,41 @@ from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
-# ==================== CONFIGURATION ====================
+# ==================== ENVIRONMENT VARIABLES ====================
 CONFIG = {
-    'email': "jiocloud90@gmail.com",
-    'password': "@Sd2007123",
-    'base_delay': 2,
-    'random_delay': True,
-    'min_delay': 1,
-    'max_delay': 3,
-    'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
-    'credit_check_interval': 1800,
-    'max_consecutive_failures': 10,
-    'refresh_page_after_failures': 5,
-    'send_screenshot_on_error': True,
-    'screenshot_cooldown_minutes': 5,
+    'email': os.getenv('ADSHARE_EMAIL', "jiocloud90@gmail.com"),
+    'password': os.getenv('ADSHARE_PASSWORD', "@Sd2007123"),
+    'base_delay': float(os.getenv('BASE_DELAY', '2')),
+    'random_delay': os.getenv('RANDOM_DELAY', 'True').lower() == 'true',
+    'min_delay': float(os.getenv('MIN_DELAY', '1')),
+    'max_delay': float(os.getenv('MAX_DELAY', '3')),
+    'telegram_token': os.getenv('TELEGRAM_TOKEN', "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8"),
+    'credit_check_interval': int(os.getenv('CREDIT_CHECK_INTERVAL', '1800')),
+    'max_consecutive_failures': int(os.getenv('MAX_CONSECUTIVE_FAILURES', '10')),
+    'refresh_page_after_failures': int(os.getenv('REFRESH_PAGE_AFTER_FAILURES', '5')),
+    'send_screenshot_on_error': os.getenv('SEND_SCREENSHOT_ON_ERROR', 'True').lower() == 'true',
+    'screenshot_cooldown_minutes': int(os.getenv('SCREENSHOT_COOLDOWN_MINUTES', '5')),
+    
+    # New Anti-Bot Features
+    'break_every_games': int(os.getenv('BREAK_EVERY_GAMES', '30')),
+    'break_min_minutes': int(os.getenv('BREAK_MIN_MINUTES', '5')),
+    'break_max_minutes': int(os.getenv('BREAK_MAX_MINUTES', '15')),
+    'slowdown_chance_percent': int(os.getenv('SLOWDOWN_CHANCE_PERCENT', '7')),
+    'slowdown_multiplier': float(os.getenv('SLOWDOWN_MULTIPLIER', '2.0')),
+    'long_break_chance_percent': int(os.getenv('LONG_BREAK_CHANCE_PERCENT', '6')),
+    'long_break_min_minutes': int(os.getenv('LONG_BREAK_MIN_MINUTES', '30')),
+    'long_break_max_minutes': int(os.getenv('LONG_BREAK_MAX_MINUTES', '60')),
+    'target_random_range': int(os.getenv('TARGET_RANDOM_RANGE', '20')),
 }
 
-class CreditGoalSolver:
+class UltimateSolver:
     def __init__(self):
         self.playwright = None
         self.browser = None
         self.page = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
+        self.pending_commands = []
         
         # State Management
         self.state = {
@@ -61,6 +73,10 @@ class CreditGoalSolver:
             'daily_start_time': self.get_daily_reset_time(),
             'is_paused': False,
             'session_history': [],
+            
+            # Anti-Bot Tracking
+            'games_since_last_break': 0,
+            'last_command_check': 0,
         }
         
         self.solver_thread = None
@@ -88,7 +104,7 @@ class CreditGoalSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare CREDIT GOAL Solver Started!</b>")
+                    self.send_telegram("🤖 <b>AdShare ULTIMATE Solver Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -113,6 +129,150 @@ class CreditGoalSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
+    async def send_telegram_async(self, text, parse_mode='HTML'):
+        """Async version of send_telegram"""
+        if not self.telegram_chat_id:
+            return False
+        
+        try:
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage"
+            payload = {
+                'chat_id': self.telegram_chat_id,
+                'text': text,
+                'parse_mode': parse_mode
+            }
+            async with requests.AsyncClient() as client:
+                response = await client.post(url, json=payload, timeout=10)
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.error(f"Async Telegram send failed: {e}")
+            return False
+
+    # ==================== COMMAND SYSTEM ====================
+    def add_pending_command(self, command):
+        """Add command to pending queue"""
+        self.pending_commands.append({
+            'command': command,
+            'timestamp': time.time()
+        })
+        self.logger.info(f"Command queued: {command}")
+
+    async def process_pending_commands(self):
+        """Process all pending commands"""
+        if not self.pending_commands:
+            return
+        
+        current_commands = self.pending_commands.copy()
+        self.pending_commands = []
+        
+        for cmd_data in current_commands:
+            command = cmd_data['command']
+            self.logger.info(f"Processing command: {command}")
+            
+            try:
+                if command == 'screenshot':
+                    result = await self.send_screenshot("📸 Command Screenshot")
+                    await self.send_telegram_async(result)
+                elif command == 'status':
+                    status = self.get_detailed_status()
+                    await self.send_telegram_async(status)
+                elif command == 'progress':
+                    progress = self.get_progress_status()
+                    await self.send_telegram_async(progress)
+                elif command == 'cookies':
+                    result = await self.send_cookies_to_telegram()
+                    await self.send_telegram_async(result)
+                elif command.startswith('target'):
+                    try:
+                        target = int(command.split()[1])
+                        response = self.set_daily_target(target)
+                        await self.send_telegram_async(response)
+                    except:
+                        await self.send_telegram_async("❌ Usage: /target 1000")
+            except Exception as e:
+                self.logger.error(f"Command processing error: {e}")
+                await self.send_telegram_async(f"❌ Command failed: {e}")
+
+    # ==================== COOKIE MANAGEMENT ====================
+    async def send_cookies_to_telegram(self):
+        """Send current cookies to Telegram"""
+        try:
+            if not self.page or not self.state['is_logged_in']:
+                return "❌ No active session or not logged in"
+            
+            cookies = await self.page.context.cookies()
+            if not cookies:
+                return "❌ No cookies found"
+            
+            # Save cookies to file first
+            with open(self.cookies_file, 'w') as f:
+                json.dump(cookies, f, indent=2)
+            
+            # Create cookie info message
+            cookie_info = f"🍪 <b>Session Cookies</b>\n"
+            cookie_info += f"📦 Total Cookies: {len(cookies)}\n"
+            cookie_info += f"⏰ Saved: {self.get_ist_time().strftime('%H:%M IST')}\n\n"
+            
+            for i, cookie in enumerate(cookies[:5]):  # Show first 5 cookies
+                cookie_info += f"<b>Cookie {i+1}:</b>\n"
+                cookie_info += f"Name: {cookie.get('name', 'N/A')}\n"
+                cookie_info += f"Domain: {cookie.get('domain', 'N/A')}\n"
+                cookie_info += f"Expires: {cookie.get('expires', 'Session')}\n\n"
+            
+            if len(cookies) > 5:
+                cookie_info += f"... and {len(cookies) - 5} more cookies\n"
+            
+            cookie_info += "💾 <i>Cookies saved to file for recovery</i>"
+            
+            return cookie_info
+            
+        except Exception as e:
+            return f"❌ Cookie export failed: {str(e)}"
+
+    async def restore_session_multiple_methods(self):
+        """Try multiple methods to restore session"""
+        self.logger.info("Attempting session restoration...")
+        
+        # Method 1: Load cookies and refresh
+        if await self.load_cookies():
+            try:
+                await self.page.reload()
+                await asyncio.sleep(3)
+                current_url = self.page.url.lower()
+                if "surf" in current_url or "dashboard" in current_url:
+                    self.logger.info("✅ Session restored via cookies")
+                    self.state['is_logged_in'] = True
+                    return True
+            except Exception as e:
+                self.logger.warning(f"Cookie refresh failed: {e}")
+        
+        # Method 2: Navigate to surf directly
+        try:
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await asyncio.sleep(3)
+            current_url = self.page.url.lower()
+            if "surf" in current_url or "dashboard" in current_url:
+                self.logger.info("✅ Session restored via direct navigation")
+                self.state['is_logged_in'] = True
+                return True
+        except Exception as e:
+            self.logger.warning(f"Direct navigation failed: {e}")
+        
+        # Method 3: Try account page
+        try:
+            await self.page.goto("https://adsha.re/account", wait_until='networkidle')
+            await asyncio.sleep(3)
+            current_url = self.page.url.lower()
+            if "account" in current_url and "login" not in current_url:
+                self.logger.info("✅ Session restored via account page")
+                self.state['is_logged_in'] = True
+                return True
+        except Exception as e:
+            self.logger.warning(f"Account page check failed: {e}")
+        
+        self.logger.info("❌ All session restoration methods failed")
+        return False
+
     # ==================== IST TIME MANAGEMENT ====================
     def get_ist_time(self):
         """Get current IST time (UTC+5:30)"""
@@ -125,7 +285,6 @@ class CreditGoalSolver:
         ist_now = self.get_ist_time()
         reset_time = ist_now.replace(hour=5, minute=30, second=0, microsecond=0)
         
-        # If current time is after 5:30 AM, reset is tomorrow
         if ist_now >= reset_time:
             reset_time += timedelta(days=1)
             
@@ -163,34 +322,36 @@ class CreditGoalSolver:
 
     # ==================== CREDIT GOAL SYSTEM ====================
     def set_daily_target(self, target_credits):
-        """Set daily credit target"""
-        self.state['daily_target'] = target_credits
-        self.check_daily_reset()  # Ensure we're tracking current day
+        """Set daily credit target with random variation"""
+        # Add random variation ±20 credits
+        random_variation = random.randint(-CONFIG['target_random_range'], CONFIG['target_random_range'])
+        actual_target = target_credits + random_variation
         
-        credits_per_hour = 240  # 4 credits/minute × 60 minutes
-        hours_needed = target_credits / credits_per_hour
+        self.state['daily_target'] = actual_target
+        self.check_daily_reset()
         
-        ist_now = self.get_ist_time()
+        credits_per_hour = 250
+        hours_needed = actual_target / credits_per_hour
+        
         reset_hours, reset_minutes = self.get_time_until_reset()
         
         response = (
             f"🎯 <b>DAILY TARGET SET</b>\n"
-            f"💎 Goal: {target_credits} credits\n"
+            f"💎 Goal: {actual_target} credits (base: {target_credits} ±{CONFIG['target_random_range']})\n"
             f"⏰ Estimated: {hours_needed:.1f} hours\n"
-            f"📊 Progress: {self.state['credits_earned_today']}/{target_credits}\n"
+            f"📊 Progress: {self.state['credits_earned_today']}/{actual_target}\n"
             f"🕒 Reset in: {reset_hours}h {reset_minutes}m\n"
             f"🌅 Reset at: 5:30 AM IST"
         )
         
         return response
 
-    def update_credits_earned(self, credits_earned=4):
+    def update_credits_earned(self, credits_earned=1):
         """Update earned credits and check if target reached"""
-        self.check_daily_reset()  # Check for daily reset
+        self.check_daily_reset()
         
         self.state['credits_earned_today'] += credits_earned
         
-        # Record session activity
         session_record = {
             'timestamp': self.get_ist_time().strftime('%H:%M IST'),
             'credits': credits_earned,
@@ -198,11 +359,9 @@ class CreditGoalSolver:
         }
         self.state['session_history'].append(session_record)
         
-        # Keep only last 10 sessions
         if len(self.state['session_history']) > 10:
             self.state['session_history'] = self.state['session_history'][-10:]
         
-        # Check if target reached
         if (self.state['daily_target'] > 0 and 
             self.state['credits_earned_today'] >= self.state['daily_target']):
             
@@ -222,7 +381,7 @@ class CreditGoalSolver:
 
     def get_progress_status(self):
         """Get detailed progress status"""
-        self.check_daily_reset()  # Ensure current day tracking
+        self.check_daily_reset()
         
         target = self.state['daily_target']
         earned = self.state['credits_earned_today']
@@ -239,13 +398,65 @@ class CreditGoalSolver:
             f"🔄 Status: {'PAUSED' if self.state['is_paused'] else 'ACTIVE'}"
         )
         
-        # Add recent session activity
         if self.state['session_history']:
             status += "\n\n<b>Recent Activity:</b>"
             for session in self.state['session_history'][-3:]:
                 status += f"\n{session['timestamp']}: +{session['credits']} credits"
         
         return status
+
+    # ==================== ANTI-BOT FEATURES ====================
+    async def take_break_if_needed(self):
+        """Take random breaks for anti-bot detection"""
+        self.state['games_since_last_break'] += 1
+        
+        # Regular break every 30 games
+        if self.state['games_since_last_break'] >= CONFIG['break_every_games']:
+            break_minutes = random.randint(CONFIG['break_min_minutes'], CONFIG['break_max_minutes'])
+            self.logger.info(f"🔄 Taking break: {break_minutes} minutes")
+            self.send_telegram(f"☕ <b>Taking Break</b>\n⏰ {break_minutes} minutes")
+            
+            self.state['games_since_last_break'] = 0
+            await asyncio.sleep(break_minutes * 60)
+            return True
+        
+        # Random longer break (5-7% chance)
+        if random.randint(1, 100) <= CONFIG['long_break_chance_percent']:
+            break_minutes = random.randint(CONFIG['long_break_min_minutes'], CONFIG['long_break_max_minutes'])
+            self.logger.info(f"🔄 Taking long break: {break_minutes} minutes")
+            self.send_telegram(f"🌙 <b>Long Break</b>\n⏰ {break_minutes} minutes")
+            
+            self.state['games_since_last_break'] = 0
+            await asyncio.sleep(break_minutes * 60)
+            return True
+        
+        # Random slowdown (5-7% chance)
+        if random.randint(1, 100) <= CONFIG['slowdown_chance_percent']:
+            slowdown_time = random.uniform(30, 120)  # 30-120 seconds
+            self.logger.info(f"🐢 Slowdown: {slowdown_time:.1f} seconds")
+            await asyncio.sleep(slowdown_time)
+            return True
+        
+        return False
+
+    async def human_like_click(self, element):
+        """Human-like click with anti-bot timing"""
+        try:
+            # Variable delay based on config
+            pre_click_delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
+            await asyncio.sleep(pre_click_delay)
+            
+            await element.hover()
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+            
+            await element.click()
+            
+            self.logger.info(f"Human-like click with {pre_click_delay:.1f}s delay")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Human-like click failed: {e}")
+            return False
 
     # ==================== EXISTING FEATURES (PRESERVED) ====================
     async def send_screenshot(self, caption="🖥️ Screenshot"):
@@ -277,7 +488,7 @@ class CreditGoalSolver:
             return f"❌ Screenshot error: {str(e)}"
 
     async def setup_playwright(self):
-        """Setup Playwright with memory optimization"""
+        """Setup Playwright"""
         self.logger.info("Setting up Playwright...")
         
         try:
@@ -292,7 +503,6 @@ class CreditGoalSolver:
                     '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
                 ]
             )
             
@@ -340,11 +550,14 @@ class CreditGoalSolver:
                 await self.playwright.stop()
             
             if await self.setup_playwright():
-                if os.path.exists(self.cookies_file):
-                    await self.load_cookies()
-                    self.logger.info("Session recovered after restart")
+                # Try multiple session restoration methods
+                if not await self.restore_session_multiple_methods():
+                    # If restoration fails, try login
+                    self.logger.info("Session restoration failed, attempting login...")
+                    if await self.ultimate_login():
+                        return True
+                    return False
                 
-                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
                 self.logger.info("Browser restart completed successfully!")
                 return True
             
@@ -369,35 +582,7 @@ class CreditGoalSolver:
         await asyncio.sleep(delay)
         return delay
 
-    # ==================== ANTI-BOT FEATURES (PRESERVED) ====================
-    async def human_like_click(self, element):
-        """Human-like click with anti-bot timing"""
-        try:
-            pre_click_delay = random.uniform(1.0, 2.0)
-            await asyncio.sleep(pre_click_delay)
-            
-            await element.hover()
-            await asyncio.sleep(random.uniform(0.1, 0.3))
-            
-            await element.click()
-            
-            self.logger.info(f"Human-like click with {pre_click_delay:.1f}s delay")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Human-like click failed: {e}")
-            return False
-
-    async def randomized_solving_flow(self):
-        """Randomized solving pattern with anti-bot timing"""
-        if random.random() < 0.1:
-            extra_delay = random.uniform(1.0, 2.0)
-            self.logger.info(f"Slower response simulation: +{extra_delay:.1f}s")
-            await asyncio.sleep(extra_delay)
-        
-        return await self.solve_symbol_game()
-
-    # ==================== ULTIMATE LOGIN (PRESERVED) ====================
+    # ==================== ULTIMATE LOGIN ====================
     async def ultimate_login(self):
         """ULTIMATE LOGIN WITH ALL FALLBACKS"""
         try:
@@ -638,7 +823,7 @@ class CreditGoalSolver:
         
         return False
 
-    # ==================== GAME SOLVING (PRESERVED) ====================
+    # ==================== GAME SOLVING ====================
     async def ensure_correct_page(self):
         """Ensure we're on the correct surf page"""
         if not self.is_browser_alive():
@@ -784,7 +969,7 @@ class CreditGoalSolver:
                     self.state['total_solved'] += 1
                     self.state['consecutive_fails'] = 0
                     
-                    # Track credits earned (1 credits per game)
+                    # Track credits earned (1 credit per game - CORRECTED)
                     target_reached = self.update_credits_earned(1)
                     
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
@@ -813,7 +998,7 @@ class CreditGoalSolver:
             self.handle_consecutive_failures()
             return False
 
-    # ==================== ERROR HANDLING (PRESERVED) ====================
+    # ==================== ERROR HANDLING ====================
     def handle_consecutive_failures(self):
         """Handle consecutive failures"""
         self.state['consecutive_fails'] += 1
@@ -883,12 +1068,13 @@ class CreditGoalSolver:
 🖥️ Browser Health: {'✅' if self.is_browser_alive() else '❌'}
 🔄 Browser Restarts: {self.state['browser_restarts']}
 ⏸️ Paused: {'✅' if self.state['is_paused'] else '❌'}
+🕹️ Games Since Break: {self.state['games_since_last_break']}
         """
         return status
 
     # ==================== MAIN SOLVER LOOP ====================
     async def solver_loop(self):
-        """Main solving loop with credit goal tracking"""
+        """Main solving loop with all features"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
@@ -916,9 +1102,18 @@ class CreditGoalSolver:
                     await asyncio.sleep(60)
                     continue
                 
+                # Process pending commands between games
+                if time.time() - self.state['last_command_check'] > 2:  # Check every 2 seconds
+                    await self.process_pending_commands()
+                    self.state['last_command_check'] = time.time()
+                
                 # Check daily reset periodically
                 if cycle_count % 10 == 0:
                     self.check_daily_reset()
+                
+                # Take anti-bot breaks
+                if await self.take_break_if_needed():
+                    continue
                 
                 # Browser health check
                 if cycle_count % 5 == 0 and not self.is_browser_alive():
@@ -943,8 +1138,8 @@ class CreditGoalSolver:
                 if cycle_count % 20 == 0:
                     gc.collect()
                 
-                # Solve game with anti-bot timing
-                game_solved = await self.randomized_solving_flow()
+                # Solve game
+                game_solved = await self.solve_symbol_game()
                 
                 if game_solved:
                     consecutive_fails = 0
@@ -971,6 +1166,8 @@ class CreditGoalSolver:
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
         self.state['is_paused'] = False
+        self.state['games_since_last_break'] = 0
+        self.state['last_command_check'] = time.time()
         
         def run_solver():
             loop = asyncio.new_event_loop()
@@ -986,15 +1183,15 @@ class CreditGoalSolver:
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        self.logger.info("CREDIT GOAL solver started successfully!")
+        self.logger.info("ULTIMATE solver started successfully!")
         
-        status_msg = "🚀 <b>CREDIT GOAL Solver Started!</b>"
+        status_msg = "🚀 <b>ULTIMATE Solver Started!</b>"
         if self.state['daily_target'] > 0:
             status_msg += f"\n🎯 Target: {self.state['daily_target']} credits"
             status_msg += f"\n💎 Earned: {self.state['credits_earned_today']} credits"
         
         self.send_telegram(status_msg)
-        return "✅ CREDIT GOAL solver started successfully!"
+        return "✅ ULTIMATE solver started successfully!"
 
     def stop(self):
         """Stop the solver"""
@@ -1024,9 +1221,9 @@ class CreditGoalSolver:
         cleanup_thread.daemon = True
         cleanup_thread.start()
         
-        self.logger.info("CREDIT GOAL solver stopped")
-        self.send_telegram("🛑 <b>CREDIT GOAL Solver Stopped!</b>")
-        return "✅ CREDIT GOAL solver stopped successfully!"
+        self.logger.info("ULTIMATE solver stopped")
+        self.send_telegram("🛑 <b>ULTIMATE Solver Stopped!</b>")
+        return "✅ ULTIMATE solver stopped successfully!"
 
     def status(self):
         """Get status"""
@@ -1035,7 +1232,7 @@ class CreditGoalSolver:
 # Telegram Bot
 class TelegramBot:
     def __init__(self):
-        self.solver = CreditGoalSolver()
+        self.solver = UltimateSolver()
         self.logger = logging.getLogger(__name__)
     
     def handle_updates(self):
@@ -1079,16 +1276,11 @@ class TelegramBot:
         elif text.startswith('/stop'):
             response = self.solver.stop()
         elif text.startswith('/status'):
-            response = self.solver.status()
+            self.solver.add_pending_command('status')
+            response = "📊 Processing status request..."
         elif text.startswith('/target'):
-            try:
-                target = int(text.split()[1])
-                if target > 0:
-                    response = self.solver.set_daily_target(target)
-                else:
-                    response = "❌ Target must be greater than 0"
-            except (IndexError, ValueError):
-                response = "❌ Usage: /target 2000"
+            self.solver.add_pending_command(text)
+            response = "🎯 Processing target request..."
         elif text.startswith('/credits'):
             async def get_credits():
                 return await self.solver.extract_credits()
@@ -1101,46 +1293,43 @@ class TelegramBot:
             except Exception as e:
                 response = f"❌ Error getting credits: {e}"
         elif text.startswith('/screenshot'):
-            async def take_screenshot():
-                return await self.solver.send_screenshot("📸 Real-time Screenshot")
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                screenshot_result = loop.run_until_complete(take_screenshot())
-                loop.close()
-                response = screenshot_result
-            except Exception as e:
-                response = f"❌ Screenshot error: {e}"
+            self.solver.add_pending_command('screenshot')
+            response = "📸 Processing screenshot request..."
+        elif text.startswith('/cookies'):
+            self.solver.add_pending_command('cookies')
+            response = "🍪 Processing cookie export..."
+        elif text.startswith('/progress'):
+            self.solver.add_pending_command('progress')
+            response = "📈 Processing progress request..."
         elif text.startswith('/pause'):
             self.solver.state['is_paused'] = True
             response = "⏸️ <b>Solver Paused</b>\nUse /resume to continue"
         elif text.startswith('/resume'):
             self.solver.state['is_paused'] = False
             response = "▶️ <b>Solver Resumed</b>"
-        elif text.startswith('/progress'):
-            response = self.solver.get_progress_status()
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare CREDIT GOAL Solver Commands</b>
+🤖 <b>AdShare ULTIMATE Solver Commands</b>
 
 /start - Start solver
 /stop - Stop solver  
 /status - Detailed status
-/target 2000 - Set daily credit goal
+/target 1000 - Set daily credit goal
 /progress - Credit progress
 /credits - Check current balance
 /screenshot - Real-time screenshot
+/cookies - Export session cookies
 /pause - Pause solver
 /resume - Resume solver
 /help - Show help
 
-💡 <b>CREDIT GOAL FEATURES</b>
-🎯 Set daily credit targets
+💡 <b>ULTIMATE FEATURES</b>
+🎯 Credit goals with random variation
+🛡️ Anti-bot breaks & slowdowns
+🍪 Cookie export & session recovery
 ⏰ IST timezone (5:30 AM reset)
-📊 Progress tracking
-🛡️ All anti-bot features
-🔐 Ultimate login system
-🚀 Auto-stop at target
+📊 Real-time progress tracking
+🚀 All previous features preserved
             """
         
         if response:
@@ -1148,5 +1337,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare CREDIT GOAL Solver started!")
+    bot.logger.info("AdShare ULTIMATE Solver started!")
     bot.handle_updates()
