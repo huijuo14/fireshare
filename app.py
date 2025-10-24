@@ -139,7 +139,6 @@ class CreditGoalSolver:
             self.logger.error(f"Backup restoration error: {e}")
             return f"❌ Backup restoration error: {str(e)}"
 
-    # ==================== IST TIME MANAGEMENT ====================
     def get_ist_time(self):
         utc_now = datetime.utcnow()
         ist_offset = timedelta(hours=5, minutes=30)
@@ -177,11 +176,10 @@ class CreditGoalSolver:
         minutes = int((time_left.total_seconds() % 3600) // 60)
         return hours, minutes
 
-    # ==================== CREDIT GOAL SYSTEM ====================
     def set_daily_target(self, target_credits):
         self.state['daily_target'] = target_credits
         self.check_daily_reset()
-        credits_per_hour = 60  # 1 credit per minute
+        credits_per_hour = 60
         hours_needed = target_credits / credits_per_hour
         reset_hours, reset_minutes = self.get_time_until_reset()
         response = (
@@ -323,7 +321,7 @@ class CreditGoalSolver:
         try:
             await locator.wait_for(state='visible', timeout=CONFIG['page_timeout'])
             await locator.scroll_into_view_if_needed()
-            await asyncio.sleep(random.uniform(0.5, 1.5))  # Pre-hover delay
+            await asyncio.sleep(random.uniform(0.5, 1.5))
             await locator.hover()
             await asyncio.sleep(random.uniform(0.1, 0.3))
             await locator.click()
@@ -784,7 +782,7 @@ class TelegramBot:
     def __init__(self):
         self.solver = CreditGoalSolver()
         self.logger = logging.getLogger(__name__)
-        self.last_file_id = None  # Store last received file_id
+        self.last_file_id = None
 
     def handle_updates(self):
         last_update_id = None
@@ -811,7 +809,6 @@ class TelegramBot:
         self.solver.telegram_chat_id = chat_id
         response = ""
         
-        # Check for document (backup file)
         if 'document' in update['message']:
             file_id = update['message']['document']['file_id']
             file_name = update['message']['document']['file_name']
@@ -821,7 +818,6 @@ class TelegramBot:
             else:
                 response = "❌ Please send a .tar.gz backup file."
 
-        # Process text commands
         if 'text' in update['message']:
             text = update['message']['text']
             if text.startswith('/start'):
