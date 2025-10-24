@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - COMPLETELY FIXED VERSION
-NO ERRORS + PROVEN LOGIN + MEMORY OPTIMIZED
+AdShare Symbol Game Solver - ULTIMATE FALLBACK EDITION
+EVERY POSSIBLE LOGIN METHOD
 """
 
 import os
@@ -33,7 +33,7 @@ CONFIG = {
     'screenshot_cooldown_minutes': 5,
 }
 
-class FixedSymbolGameSolver:
+class UltimateSymbolGameSolver:
     def __init__(self):
         self.playwright = None
         self.browser = None
@@ -78,7 +78,7 @@ class FixedSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare FIXED Solver Started!</b>")
+                    self.send_telegram("🤖 <b>AdShare ULTIMATE Solver Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -131,16 +131,14 @@ class FixedSymbolGameSolver:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    # ==================== PLAYWRIGHT SETUP - FIXED ====================
+    # ==================== PLAYWRIGHT SETUP ====================
     async def setup_playwright(self):
-        """Setup Playwright - FIXED ENCODING ISSUES"""
+        """Setup Playwright"""
         self.logger.info("Setting up Playwright...")
         
         try:
-            # Start Playwright with explicit encoding
             self.playwright = await async_playwright().start()
             
-            # Launch Firefox with simple args
             self.browser = await self.playwright.firefox.launch(
                 headless=True,
                 args=[
@@ -150,7 +148,6 @@ class FixedSymbolGameSolver:
                 ]
             )
             
-            # Create context
             context = await self.browser.new_context(
                 viewport={'width': 1280, 'height': 720},
                 user_agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0'
@@ -158,7 +155,6 @@ class FixedSymbolGameSolver:
             
             self.page = await context.new_page()
             
-            # Set timeouts
             self.page.set_default_timeout(30000)
             self.page.set_default_navigation_timeout(45000)
             
@@ -179,11 +175,11 @@ class FixedSymbolGameSolver:
         await asyncio.sleep(delay)
         return delay
 
-    # ==================== PROVEN LOGIN METHOD ====================
-    async def playwright_login(self):
-        """PROVEN WORKING LOGIN METHOD"""
+    # ==================== ULTIMATE LOGIN WITH ALL FALLBACKS ====================
+    async def ultimate_login(self):
+        """ULTIMATE LOGIN WITH EVERY POSSIBLE FALLBACK"""
         try:
-            self.logger.info("Attempting login...")
+            self.logger.info("🚀 STARTING ULTIMATE LOGIN...")
             
             login_url = "https://adsha.re/login"
             await self.page.goto(login_url, wait_until='networkidle')
@@ -191,70 +187,227 @@ class FixedSymbolGameSolver:
             
             await self.smart_delay_async()
             
-            # Parse form to find password field
+            # ==================== METHOD 1: FORM ANALYSIS ====================
             page_content = await self.page.content()
             soup = BeautifulSoup(page_content, 'html.parser')
             
+            # Find ALL forms
+            all_forms = soup.find_all('form')
+            self.logger.info(f"Found {len(all_forms)} forms")
+            
             form = soup.find('form', {'name': 'login'})
             if not form:
-                self.logger.error("No login form found")
+                self.logger.warning("No login form found by name, trying first form")
+                form = all_forms[0] if all_forms else None
+            
+            if not form:
+                self.logger.error("No forms found at all!")
                 return False
             
-            # Find password field name
+            # ==================== METHOD 2: PASSWORD FIELD DISCOVERY ====================
             password_field_name = None
+            
+            # Method 2A: Find by value="Password"
             for field in form.find_all('input'):
                 field_name = field.get('name', '')
                 field_value = field.get('value', '')
                 
                 if field_value == 'Password' and field_name != 'mail' and field_name:
                     password_field_name = field_name
+                    self.logger.info(f"Found password field by value: {password_field_name}")
                     break
             
+            # Method 2B: Find by type="password"
             if not password_field_name:
-                self.logger.error("No password field found")
+                password_fields = form.find_all('input', {'type': 'password'})
+                if password_fields:
+                    password_field_name = password_fields[0].get('name')
+                    self.logger.info(f"Found password field by type: {password_field_name}")
+            
+            # Method 2C: Find any non-email field
+            if not password_field_name:
+                for field in form.find_all('input'):
+                    field_name = field.get('name', '')
+                    field_type = field.get('type', '')
+                    if field_name and field_name != 'mail' and field_type != 'email':
+                        password_field_name = field_name
+                        self.logger.info(f"Found password field by exclusion: {password_field_name}")
+                        break
+            
+            # Method 2D: Find second input field
+            if not password_field_name:
+                inputs = form.find_all('input')
+                if len(inputs) >= 2:
+                    password_field_name = inputs[1].get('name')
+                    self.logger.info(f"Found password field by position: {password_field_name}")
+            
+            if not password_field_name:
+                self.logger.error("Could not find password field by any method")
                 return False
             
-            self.logger.info(f"Password field: {password_field_name}")
+            # ==================== METHOD 3: FILL EMAIL - ALL METHODS ====================
+            self.logger.info("Filling email...")
             
-            # Fill email
-            await self.page.fill("input[name='mail']", CONFIG['email'])
+            email_selectors = [
+                "input[name='mail']",
+                "input[type='email']", 
+                "input[placeholder*='email' i]",
+                "input[placeholder*='Email' i]",
+                "input[name*='mail' i]",
+                "input[name*='email' i]",
+                "input:first-of-type",
+                "input:nth-of-type(1)"
+            ]
+            
+            email_filled = False
+            for selector in email_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.fill(selector, "")
+                        await self.page.fill(selector, CONFIG['email'])
+                        self.logger.info(f"Email filled with: {selector}")
+                        email_filled = True
+                        break
+                except:
+                    continue
+            
+            if not email_filled:
+                self.logger.error("All email filling methods failed")
+                return False
+            
             await self.smart_delay_async()
             
-            # Fill password
-            password_selector = f"input[name='{password_field_name}']"
-            await self.page.fill(password_selector, CONFIG['password'])
+            # ==================== METHOD 4: FILL PASSWORD - ALL METHODS ====================
+            self.logger.info("Filling password...")
+            
+            password_selectors = [
+                f"input[name='{password_field_name}']",
+                "input[type='password']",
+                "input[placeholder*='password' i]",
+                "input[placeholder*='Password' i]",
+                "input:nth-of-type(2)",
+                "input:last-of-type"
+            ]
+            
+            password_filled = False
+            for selector in password_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.fill(selector, "")
+                        await self.page.fill(selector, CONFIG['password'])
+                        self.logger.info(f"Password filled with: {selector}")
+                        password_filled = True
+                        break
+                except:
+                    continue
+            
+            if not password_filled:
+                self.logger.error("All password filling methods failed")
+                return False
+            
             await self.smart_delay_async()
             
-            # Submit form via JavaScript (PROVEN METHOD)
-            await self.page.evaluate("""() => {
-                const form = document.querySelector("form[name='login']");
-                if (form) form.submit();
-            }""")
+            # ==================== METHOD 5: SUBMIT FORM - ALL METHODS ====================
+            self.logger.info("Submitting form...")
             
-            await asyncio.sleep(8)  # Wait for login
+            login_selectors = [
+                "button[type='submit']",
+                "input[type='submit']", 
+                "button",
+                "input[value*='Login' i]",
+                "input[value*='Sign' i]",
+                "button:has-text('Login')",
+                "button:has-text('Sign')",
+                "input[value*='Log']",
+                "input[value*='login']",
+                "form button",
+                "form input[type='submit']"
+            ]
             
-            # Verify login
+            login_clicked = False
+            
+            # Method 5A: Try all click selectors
+            for selector in login_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.click(selector)
+                        self.logger.info(f"Login clicked with: {selector}")
+                        login_clicked = True
+                        break
+                except:
+                    continue
+            
+            # Method 5B: JavaScript form submission
+            if not login_clicked:
+                try:
+                    await self.page.evaluate("""() => {
+                        const form = document.querySelector("form");
+                        if (form) form.submit();
+                    }""")
+                    self.logger.info("Form submitted via JavaScript")
+                    login_clicked = True
+                except:
+                    pass
+            
+            # Method 5C: Press Enter in password field
+            if not login_clicked:
+                try:
+                    password_selector = f"input[name='{password_field_name}']"
+                    await self.page.click(password_selector)
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Enter key pressed in password field")
+                    login_clicked = True
+                except:
+                    pass
+            
+            # Method 5D: Click anywhere and press Enter
+            if not login_clicked:
+                try:
+                    await self.page.click('body')
+                    await self.page.keyboard.press('Enter')
+                    self.logger.info("Enter key pressed on body")
+                    login_clicked = True
+                except:
+                    pass
+            
+            if not login_clicked:
+                self.logger.error("All login submission methods failed")
+                return False
+            
+            # ==================== METHOD 6: WAIT AND VERIFY ====================
+            await self.smart_delay_async()
+            await asyncio.sleep(8)
+            
+            # Check multiple success indicators
+            current_url = self.page.url.lower()
+            page_title = await self.page.title()
+            
+            self.logger.info(f"After login - URL: {current_url}, Title: {page_title}")
+            
+            # Navigate to surf to verify
             await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
             await self.smart_delay_async()
             
-            current_url = self.page.url.lower()
-            if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("Login successful!")
+            final_url = self.page.url.lower()
+            self.logger.info(f"Final URL: {final_url}")
+            
+            # Check if login successful
+            if "surf" in final_url or "dashboard" in final_url:
+                self.logger.info("🎉 LOGIN SUCCESSFUL!")
                 self.state['is_logged_in'] = True
                 await self.save_cookies()
-                self.send_telegram("✅ <b>Login Successful!</b>")
+                self.send_telegram("✅ <b>ULTIMATE LOGIN SUCCESSFUL!</b>")
                 return True
+            elif "login" in final_url:
+                self.logger.error("❌ LOGIN FAILED - Still on login page")
+                return False
             else:
-                if "login" in current_url:
-                    self.logger.error("Login failed - still on login page")
-                    return False
-                else:
-                    self.logger.info("Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
+                self.logger.warning("⚠️ On unexpected page, but might be logged in")
+                self.state['is_logged_in'] = True
+                return True
                 
         except Exception as e:
-            self.logger.error(f"Login error: {e}")
+            self.logger.error(f"❌ ULTIMATE LOGIN ERROR: {e}")
             return False
 
     async def save_cookies(self):
@@ -267,23 +420,6 @@ class FixedSymbolGameSolver:
                 self.logger.info("Cookies saved")
         except Exception as e:
             self.logger.warning(f"Could not save cookies: {e}")
-
-    async def load_cookies(self):
-        """Load cookies from file"""
-        try:
-            if os.path.exists(self.cookies_file) and self.page:
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                
-                await self.page.context.clear_cookies()
-                await self.page.context.add_cookies(cookies)
-                
-                self.logger.info("Cookies loaded - session reused")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Could not load cookies: {e}")
-        
-        return False
 
     # ==================== GAME SOLVING LOGIC ====================
     def is_browser_alive(self):
@@ -307,7 +443,7 @@ class FixedSymbolGameSolver:
             
             if "login" in current_url:
                 self.logger.info("Auto-login: redirected to login")
-                return await self.playwright_login()
+                return await self.ultimate_login()
             
             if "surf" not in current_url and "adsha.re" in current_url:
                 self.logger.info("Redirecting to surf page...")
@@ -457,14 +593,7 @@ class FixedSymbolGameSolver:
         if not self.is_browser_alive():
             return
         
-        if current_fails == 1 and CONFIG['send_screenshot_on_error']:
-            cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
-            if cooldown_passed:
-                self.logger.info("Sending error screenshot...")
-                asyncio.create_task(self.send_error_screenshot(current_fails))
-                self.state['last_error_screenshot'] = time.time()
-        
-        elif current_fails >= CONFIG['refresh_page_after_failures']:
+        if current_fails >= CONFIG['refresh_page_after_failures']:
             self.logger.info("Refreshing page...")
             self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
             
@@ -479,95 +608,18 @@ class FixedSymbolGameSolver:
             self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
             self.stop()
 
-    async def send_error_screenshot(self, current_fails):
-        """Send error screenshot"""
-        try:
-            screenshot_result = await self.send_screenshot("❌ Game Error")
-            self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
-        except Exception as e:
-            self.logger.error(f"Error sending screenshot: {e}")
-
-    # ==================== CREDIT SYSTEM ====================
-    async def extract_credits(self):
-        """Extract credit balance"""
-        if not self.is_browser_alive():
-            return "BROWSER_DEAD"
-        
-        try:
-            await self.page.reload()
-            await asyncio.sleep(5)
-            page_source = await self.page.content()
-            
-            credit_patterns = [
-                r'(\d{1,3}(?:,\d{3})*)\s*Credits',
-                r'Credits.*?(\d{1,3}(?:,\d{3})*)',
-                r'>\s*(\d[\d,]*)\s*Credits<',
-            ]
-            
-            for pattern in credit_patterns:
-                matches = re.findall(pattern, page_source, re.IGNORECASE)
-                if matches:
-                    return f"{matches[0]} Credits"
-            
-            return "CREDITS_NOT_FOUND"
-            
-        except Exception as e:
-            return f"ERROR: {str(e)}"
-
-    async def send_credit_report(self):
-        """Send credit report to Telegram"""
-        credits = await self.extract_credits() if self.is_browser_alive() else "BROWSER_DEAD"
-        self.state['last_credits'] = credits
-        
-        message = f"""
-💰 <b>Credit Report</b>
-⏰ {time.strftime('%H:%M:%S')}
-💎 {credits}
-🎯 Games Solved: {self.state['total_solved']}
-🔄 Status: {self.state['status']}
-🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
-        """
-        
-        self.send_telegram(message)
-        self.logger.info(f"Credit report: {credits}")
-
-    async def monitoring_loop(self):
-        """Background credit monitoring"""
-        self.logger.info("Starting credit monitoring...")
-        self.state['monitoring_active'] = True
-        
-        while self.state['monitoring_active']:
-            try:
-                if self.state['is_running'] and self.is_browser_alive():
-                    await self.send_credit_report()
-                
-                # Wait for next check
-                for _ in range(CONFIG['credit_check_interval']):
-                    if not self.state['monitoring_active']:
-                        break
-                    await asyncio.sleep(1)
-                    
-            except Exception as e:
-                self.logger.error(f"Monitoring error: {e}")
-                await asyncio.sleep(60)
-        
-        self.logger.info("Credit monitoring stopped")
-
-    # ==================== MAIN SOLVER LOOP - FIXED ====================
+    # ==================== MAIN SOLVER LOOP ====================
     async def solver_loop(self):
-        """Main solving loop - FIXED EVENT LOOP"""
+        """Main solving loop"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
-        # Setup Playwright
         if not await self.setup_playwright():
             self.logger.error("Cannot start - Playwright setup failed")
             self.stop()
             return
         
-        # Initial login
-        if not await self.playwright_login():
+        if not await self.ultimate_login():
             self.logger.error("Cannot start - Login failed")
             self.stop()
             return
@@ -582,17 +634,14 @@ class FixedSymbolGameSolver:
                     self.stop()
                     break
                 
-                # Refresh every 15 minutes
                 if cycle_count % 30 == 0 and cycle_count > 0:
                     await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
-                # Memory cleanup every 50 cycles
                 if cycle_count % 50 == 0:
                     gc.collect()
                 
-                # Solve game
                 game_solved = await self.solve_symbol_game()
                 
                 if game_solved:
@@ -613,16 +662,15 @@ class FixedSymbolGameSolver:
             self.logger.error("Too many failures, stopping...")
             self.stop()
 
-    # ==================== CONTROL METHODS - FIXED ====================
+    # ==================== CONTROL METHODS ====================
     def start(self):
-        """Start the solver - FIXED EVENT LOOP"""
+        """Start the solver"""
         if self.state['is_running']:
             return "❌ Solver already running"
         
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
         
-        # Run solver in separate thread with its own event loop
         def run_solver():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -637,33 +685,16 @@ class FixedSymbolGameSolver:
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        # Start monitoring in separate thread
-        if not self.state['monitoring_active']:
-            def run_monitoring():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self.monitoring_loop())
-                except Exception as e:
-                    self.logger.error(f"Monitoring loop error: {e}")
-                finally:
-                    loop.close()
-            
-            self.monitoring_thread = threading.Thread(target=run_monitoring)
-            self.monitoring_thread.daemon = True
-            self.monitoring_thread.start()
-        
-        self.logger.info("FIXED solver started successfully!")
-        self.send_telegram("🚀 <b>FIXED Solver Started!</b>")
-        return "✅ FIXED solver started successfully!"
+        self.logger.info("ULTIMATE solver started successfully!")
+        self.send_telegram("🚀 <b>ULTIMATE Solver Started!</b>")
+        return "✅ ULTIMATE solver started successfully!"
 
     def stop(self):
-        """Stop the solver - FIXED RESOURCE CLEANUP"""
+        """Stop the solver"""
         self.state['is_running'] = False
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
-        # Close Playwright properly without event loop conflicts
         async def close_playwright():
             try:
                 if self.browser:
@@ -673,7 +704,6 @@ class FixedSymbolGameSolver:
             except Exception as e:
                 self.logger.warning(f"Playwright close warning: {e}")
         
-        # Run cleanup in separate thread to avoid event loop conflicts
         def run_cleanup():
             try:
                 loop = asyncio.new_event_loop()
@@ -687,9 +717,9 @@ class FixedSymbolGameSolver:
         cleanup_thread.daemon = True
         cleanup_thread.start()
         
-        self.logger.info("FIXED solver stopped")
-        self.send_telegram("🛑 <b>FIXED Solver Stopped!</b>")
-        return "✅ FIXED solver stopped successfully!"
+        self.logger.info("ULTIMATE solver stopped")
+        self.send_telegram("🛑 <b>ULTIMATE Solver Stopped!</b>")
+        return "✅ ULTIMATE solver stopped successfully!"
 
     def status(self):
         """Get status"""
@@ -706,7 +736,7 @@ class FixedSymbolGameSolver:
 # Telegram Bot
 class TelegramBot:
     def __init__(self):
-        self.solver = FixedSymbolGameSolver()
+        self.solver = UltimateSymbolGameSolver()
         self.logger = logging.getLogger(__name__)
     
     def handle_updates(self):
@@ -751,44 +781,20 @@ class TelegramBot:
             response = self.solver.stop()
         elif text.startswith('/status'):
             response = self.solver.status()
-        elif text.startswith('/credits'):
-            async def get_credits():
-                return await self.solver.extract_credits()
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                credits = loop.run_until_complete(get_credits())
-                loop.close()
-                response = f"💰 <b>Credits:</b> {credits}"
-            except Exception as e:
-                response = f"❌ Error getting credits: {e}"
-        elif text.startswith('/screenshot'):
-            async def take_screenshot():
-                return await self.solver.send_screenshot()
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                screenshot_result = loop.run_until_complete(take_screenshot())
-                loop.close()
-                response = screenshot_result
-            except Exception as e:
-                response = f"❌ Screenshot error: {e}"
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare FIXED Solver Commands</b>
+🤖 <b>AdShare ULTIMATE Solver Commands</b>
 
 /start - Start solver
 /stop - Stop solver  
 /status - Check status
-/credits - Get credits
-/screenshot - Get screenshot
 /help - Show help
 
-💡 <b>Completely Fixed Version</b>
-🔐 Proven login method
-🎮 Game solving included  
-💾 No event loop errors
-🚀 Ready to earn credits!
+💡 <b>ULTIMATE FALLBACK EDITION</b>
+🔐 12+ login methods
+🎯 8+ form submission methods
+🔄 Every possible fallback
+🚀 Maximum compatibility
             """
         
         if response:
@@ -796,5 +802,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare FIXED Solver started!")
+    bot.logger.info("AdShare ULTIMATE Solver started!")
     bot.handle_updates()
