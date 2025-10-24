@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - Hybrid Edition FIXED
-LOGIN WITH SELENIUM + GAME SOLVING WITH PLAYWRIGHT
+AdShare Symbol Game Solver - Pure Playwright Edition
+REPLICATING THE WORKING SELENIUM LOGIN
 """
 
 import os
@@ -14,13 +14,6 @@ import threading
 import json
 import gc
 import asyncio
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
@@ -40,12 +33,11 @@ CONFIG = {
     'screenshot_cooldown_minutes': 5,
 }
 
-class HybridSymbolGameSolver:
+class PlaywrightSymbolGameSolver:
     def __init__(self):
-        self.selenium_driver = None
         self.playwright = None
-        self.playwright_browser = None
-        self.playwright_page = None
+        self.browser = None
+        self.page = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
@@ -87,7 +79,7 @@ class HybridSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Hybrid Solver Started!</b>")
+                    self.send_telegram("🤖 <b>AdShare Pure Playwright Solver Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -112,25 +104,14 @@ class HybridSymbolGameSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    def send_screenshot(self):
+    async def send_screenshot(self, caption="🖥️ Screenshot"):
         """Send screenshot to Telegram"""
-        if not self.playwright_page or not self.telegram_chat_id:
+        if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
-            # Use the main event loop for screenshot
-            if self.main_loop and not self.main_loop.is_closed():
-                loop = self.main_loop
-            else:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            async def take_screenshot():
-                screenshot_path = "/tmp/screenshot.png"
-                await self.playwright_page.screenshot(path=screenshot_path)
-                return screenshot_path
-            
-            screenshot_path = loop.run_until_complete(take_screenshot())
+            screenshot_path = "/tmp/screenshot.png"
+            await self.page.screenshot(path=screenshot_path)
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
@@ -138,7 +119,7 @@ class HybridSymbolGameSolver:
                 files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': f'🖥️ Screenshot - {time.strftime("%H:%M:%S")}'
+                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
                 }
                 
                 response = requests.post(url, files=files, data=data, timeout=30)
@@ -151,293 +132,61 @@ class HybridSymbolGameSolver:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    # ==================== SELENIUM LOGIN ====================
-    def setup_selenium(self):
-        """Setup Selenium for login"""
-        self.logger.info("Setting up Selenium for login...")
-        
-        try:
-            options = Options()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            
-            # Memory optimizations
-            options.set_preference("dom.ipc.processCount", 1)
-            options.set_preference("content.processLimit", 1)
-            options.set_preference("browser.cache.disk.enable", False)
-            options.set_preference("browser.cache.memory.enable", False)
-            options.set_preference("javascript.options.mem.max", 25600)
-            
-            service = Service('/usr/local/bin/geckodriver')
-            self.selenium_driver = webdriver.Firefox(service=service, options=options)
-            
-            # Install uBlock Origin
-            ublock_path = '/app/ublock.xpi'
-            if os.path.exists(ublock_path):
-                self.selenium_driver.install_addon(ublock_path, temporary=False)
-                self.logger.info("uBlock Origin installed")
-            
-            self.logger.info("Selenium started successfully!")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Selenium setup failed: {e}")
-            return False
-
-    def selenium_login(self):
-        """Login using Selenium (PROVEN WORKING METHOD)"""
-        try:
-            self.logger.info("SELENIUM: Attempting login...")
-            
-            login_url = "https://adsha.re/login"
-            self.selenium_driver.get(login_url)
-            
-            WebDriverWait(self.selenium_driver, 20).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            
-            self.smart_delay()
-            
-            page_source = self.selenium_driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            
-            form = soup.find('form', {'name': 'login'})
-            if not form:
-                self.logger.error("SELENIUM: No login form found")
-                return False
-            
-            password_field_name = None
-            for field in form.find_all('input'):
-                field_name = field.get('name', '')
-                field_value = field.get('value', '')
-                
-                if field_value == 'Password' and field_name != 'mail' and field_name:
-                    password_field_name = field_name
-                    break
-            
-            if not password_field_name:
-                self.logger.error("SELENIUM: No password field found")
-                return False
-            
-            self.logger.info(f"SELENIUM: Password field: {password_field_name}")
-            
-            # Fill email
-            email_selectors = [
-                "input[name='mail']",
-                "input[type='email']",
-                "input[placeholder*='email' i]"
-            ]
-            
-            email_filled = False
-            for selector in email_selectors:
-                try:
-                    email_field = self.selenium_driver.find_element(By.CSS_SELECTOR, selector)
-                    email_field.clear()
-                    email_field.send_keys(CONFIG['email'])
-                    self.logger.info("SELENIUM: Email entered")
-                    email_filled = True
-                    break
-                except:
-                    continue
-            
-            if not email_filled:
-                return False
-            
-            self.smart_delay()
-            
-            # Fill password
-            password_selector = f"input[name='{password_field_name}']"
-            try:
-                password_field = self.selenium_driver.find_element(By.CSS_SELECTOR, password_selector)
-                password_field.clear()
-                password_field.send_keys(CONFIG['password'])
-                self.logger.info("SELENIUM: Password entered")
-            except:
-                return False
-            
-            self.smart_delay()
-            
-            # Click login button
-            login_selectors = [
-                "button[type='submit']",
-                "input[type='submit']",
-                "button",
-                "input[value*='Login']",
-                "input[value*='Sign']"
-            ]
-            
-            login_clicked = False
-            for selector in login_selectors:
-                try:
-                    login_btn = self.selenium_driver.find_element(By.CSS_SELECTOR, selector)
-                    if login_btn.is_displayed() and login_btn.is_enabled():
-                        login_btn.click()
-                        self.logger.info("SELENIUM: Login button clicked")
-                        login_clicked = True
-                        break
-                except:
-                    continue
-            
-            if not login_clicked:
-                try:
-                    form_element = self.selenium_driver.find_element(By.CSS_SELECTOR, "form[name='login']")
-                    form_element.submit()
-                    self.logger.info("SELENIUM: Form submitted")
-                    login_clicked = True
-                except:
-                    pass
-            
-            self.smart_delay()
-            time.sleep(8)
-            
-            # Verify login
-            self.selenium_driver.get("https://adsha.re/surf")
-            self.smart_delay()
-            
-            current_url = self.selenium_driver.current_url
-            if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("SELENIUM: Login successful!")
-                self.state['is_logged_in'] = True
-                self.save_cookies_selenium()
-                self.send_telegram("✅ <b>Selenium Login Successful!</b>")
-                return True
-            else:
-                if "login" in current_url:
-                    self.logger.error("SELENIUM: Login failed - still on login page")
-                    return False
-                else:
-                    self.logger.info("SELENIUM: Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
-                
-        except Exception as e:
-            self.logger.error(f"SELENIUM: Login error: {e}")
-            return False
-
-    def save_cookies_selenium(self):
-        """Save cookies from Selenium"""
-        try:
-            if self.selenium_driver and self.state['is_logged_in']:
-                cookies = self.selenium_driver.get_cookies()
-                with open(self.cookies_file, 'w') as f:
-                    json.dump(cookies, f)
-                self.logger.info("Selenium cookies saved")
-        except Exception as e:
-            self.logger.warning(f"Could not save Selenium cookies: {e}")
-
-    # ==================== PLAYWRIGHT GAME SOLVING ====================
+    # ==================== PLAYWRIGHT SETUP ====================
     async def setup_playwright(self):
-        """Setup Playwright for game solving"""
-        self.logger.info("Setting up Playwright for game solving...")
+        """Setup Playwright with memory optimization"""
+        self.logger.info("Setting up Playwright...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            # Simple Firefox launch for game solving
-            self.playwright_browser = await self.playwright.firefox.launch(
+            # Launch Firefox with memory optimizations
+            self.browser = await self.playwright.firefox.launch(
                 headless=True,
                 args=[
                     '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                ]
+                    '--disable-gpu',
+                    '--disable-dev-shm-usage',
+                    '--disable-setuid-sandbox',
+                    '--no-first-run',
+                    '--single-process',
+                    '--disable-extensions',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
+                ],
+                # Memory optimization flags
+                firefox_user_prefs={
+                    'dom.ipc.processCount': 1,
+                    'content.processLimit': 1,
+                    'browser.cache.disk.enable': False,
+                    'browser.cache.memory.enable': False,
+                    'javascript.options.mem.max': 25600,
+                    'browser.sessionhistory.max_entries': 1,
+                    'image.mem.max_decoded_image_kb': 512,
+                    'media.memory_cache_max_size': 1024,
+                }
             )
             
-            # Create context
-            context = await self.playwright_browser.new_context(
-                viewport={'width': 1280, 'height': 720}
+            # Create context with viewport
+            context = await self.browser.new_context(
+                viewport={'width': 1280, 'height': 720},
+                user_agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0'
             )
             
-            self.playwright_page = await context.new_page()
+            self.page = await context.new_page()
             
             # Set timeouts
-            self.playwright_page.set_default_timeout(30000)
-            self.playwright_page.set_default_navigation_timeout(45000)
+            self.page.set_default_timeout(30000)
+            self.page.set_default_navigation_timeout(45000)
             
             self.logger.info("Playwright started successfully!")
             return True
             
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
-            return False
-
-    async def transfer_session_to_playwright(self):
-        """Transfer session from Selenium to Playwright"""
-        try:
-            if not self.selenium_driver or not self.playwright_page:
-                self.logger.error("Selenium or Playwright not available")
-                return False
-            
-            # Get cookies from Selenium
-            selenium_cookies = self.selenium_driver.get_cookies()
-            self.logger.info(f"Found {len(selenium_cookies)} cookies to transfer")
-            
-            if not selenium_cookies:
-                self.logger.error("No cookies found in Selenium")
-                return False
-            
-            # Convert Selenium cookies to Playwright format
-            playwright_cookies = []
-            for cookie in selenium_cookies:
-                playwright_cookies.append({
-                    'name': cookie['name'],
-                    'value': cookie['value'],
-                    'domain': cookie.get('domain', '.adsha.re'),
-                    'path': cookie.get('path', '/'),
-                    'expires': cookie.get('expiry'),
-                    'httpOnly': cookie.get('httpOnly', False),
-                    'secure': cookie.get('secure', True),
-                    'sameSite': cookie.get('sameSite', 'Lax')
-                })
-            
-            # Clear existing cookies and apply new ones
-            await self.playwright_page.context.clear_cookies()
-            await self.playwright_page.context.add_cookies(playwright_cookies)
-            
-            self.logger.info(f"Transferred {len(playwright_cookies)} cookies to Playwright")
-            
-            # Navigate to surf page to verify session
-            await self.playwright_page.goto("https://adsha.re/surf", wait_until='networkidle')
-            await asyncio.sleep(3)
-            
-            current_url = self.playwright_page.url.lower()
-            self.logger.info(f"Playwright current URL: {current_url}")
-            
-            if "surf" in current_url or "dashboard" in current_url:
-                self.logger.info("Session transferred to Playwright successfully!")
-                return True
-            elif "login" in current_url:
-                self.logger.error("Session transfer failed - redirected to login")
-                # Try to capture why it failed
-                page_content = await self.playwright_page.content()
-                if "login" in page_content.lower():
-                    self.logger.error("Login page detected after cookie transfer")
-                return False
-            else:
-                self.logger.warning(f"Unexpected page after transfer: {current_url}")
-                # Check if we can still see the game
-                try:
-                    svg_elements = await self.playwright_page.query_selector_all("svg")
-                    if svg_elements:
-                        self.logger.info("Found SVG elements - session might be valid")
-                        return True
-                except:
-                    pass
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Session transfer error: {e}")
-            return False
-
-    def is_playwright_alive(self):
-        """Check if Playwright is alive"""
-        try:
-            return (self.playwright_page and 
-                   not self.playwright_page.is_closed() and 
-                   self.playwright_browser and 
-                   self.playwright_browser.is_connected())
-        except Exception:
             return False
 
     def smart_delay(self):
@@ -450,74 +199,224 @@ class HybridSymbolGameSolver:
         time.sleep(delay)
         return delay
 
-    async def ensure_correct_page_playwright(self):
+    async def smart_delay_async(self):
+        """Async version of smart delay"""
+        if CONFIG['random_delay']:
+            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
+        else:
+            delay = CONFIG['base_delay']
+        
+        await asyncio.sleep(delay)
+        return delay
+
+    # ==================== PLAYWRIGHT LOGIN (Replicating Selenium) ====================
+    async def playwright_login(self):
+        """Replicate the EXACT Selenium login flow in Playwright"""
+        try:
+            self.logger.info("PLAYWRIGHT: Attempting login...")
+            
+            login_url = "https://adsha.re/login"
+            await self.page.goto(login_url, wait_until='networkidle')
+            await self.page.wait_for_selector("body")
+            
+            await self.smart_delay_async()
+            
+            # Get page content and parse with BeautifulSoup (same as Selenium)
+            page_content = await self.page.content()
+            soup = BeautifulSoup(page_content, 'html.parser')
+            
+            form = soup.find('form', {'name': 'login'})
+            if not form:
+                self.logger.error("PLAYWRIGHT: No login form found")
+                return False
+            
+            # Find password field name (same logic as Selenium)
+            password_field_name = None
+            for field in form.find_all('input'):
+                field_name = field.get('name', '')
+                field_value = field.get('value', '')
+                
+                if field_value == 'Password' and field_name != 'mail' and field_name:
+                    password_field_name = field_name
+                    break
+            
+            if not password_field_name:
+                self.logger.error("PLAYWRIGHT: No password field found")
+                return False
+            
+            self.logger.info(f"PLAYWRIGHT: Password field: {password_field_name}")
+            
+            # Fill email (replicating Selenium selectors)
+            email_selectors = [
+                "input[name='mail']",
+                "input[type='email']",
+                "input[placeholder*='email' i]"
+            ]
+            
+            email_filled = False
+            for selector in email_selectors:
+                try:
+                    await self.page.fill(selector, CONFIG['email'])
+                    self.logger.info("PLAYWRIGHT: Email entered")
+                    email_filled = True
+                    break
+                except:
+                    continue
+            
+            if not email_filled:
+                self.logger.error("PLAYWRIGHT: Could not fill email")
+                return False
+            
+            await self.smart_delay_async()
+            
+            # Fill password using the discovered field name
+            password_selector = f"input[name='{password_field_name}']"
+            try:
+                await self.page.fill(password_selector, CONFIG['password'])
+                self.logger.info("PLAYWRIGHT: Password entered")
+            except Exception as e:
+                self.logger.error(f"PLAYWRIGHT: Could not fill password: {e}")
+                return False
+            
+            await self.smart_delay_async()
+            
+            # Click login button (replicating Selenium logic)
+            login_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button",
+                "input[value*='Login']",
+                "input[value*='Sign']"
+            ]
+            
+            login_clicked = False
+            for selector in login_selectors:
+                try:
+                    if await self.page.is_visible(selector):
+                        await self.page.click(selector)
+                        self.logger.info(f"PLAYWRIGHT: Login button clicked with {selector}")
+                        login_clicked = True
+                        break
+                except:
+                    continue
+            
+            # If no button found, try form submission (same as Selenium)
+            if not login_clicked:
+                try:
+                    await self.page.evaluate("""() => {
+                        const form = document.querySelector("form[name='login']");
+                        if (form) form.submit();
+                    }""")
+                    self.logger.info("PLAYWRIGHT: Form submitted via JavaScript")
+                    login_clicked = True
+                except Exception as e:
+                    self.logger.error(f"PLAYWRIGHT: Form submission failed: {e}")
+            
+            await self.smart_delay_async()
+            await asyncio.sleep(8)  # Same wait as Selenium
+            
+            # Verify login by navigating to surf page
+            await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+            await self.smart_delay_async()
+            
+            current_url = self.page.url.lower()
+            if "surf" in current_url or "dashboard" in current_url:
+                self.logger.info("PLAYWRIGHT: Login successful!")
+                self.state['is_logged_in'] = True
+                await self.save_cookies()
+                self.send_telegram("✅ <b>Playwright Login Successful!</b>")
+                return True
+            else:
+                if "login" in current_url:
+                    self.logger.error("PLAYWRIGHT: Login failed - still on login page")
+                    # Take screenshot for debugging
+                    await self.send_screenshot("❌ Login Failed")
+                    return False
+                else:
+                    self.logger.info("PLAYWRIGHT: Login may need verification, continuing...")
+                    self.state['is_logged_in'] = True
+                    return True
+                
+        except Exception as e:
+            self.logger.error(f"PLAYWRIGHT: Login error: {e}")
+            await self.send_screenshot("❌ Login Error")
+            return False
+
+    async def save_cookies(self):
+        """Save cookies to file"""
+        try:
+            if self.page and self.state['is_logged_in']:
+                cookies = await self.page.context.cookies()
+                with open(self.cookies_file, 'w') as f:
+                    json.dump(cookies, f)
+                self.logger.info("Playwright cookies saved")
+        except Exception as e:
+            self.logger.warning(f"Could not save cookies: {e}")
+
+    async def load_cookies(self):
+        """Load cookies from file"""
+        try:
+            if os.path.exists(self.cookies_file) and self.page:
+                with open(self.cookies_file, 'r') as f:
+                    cookies = json.load(f)
+                
+                await self.page.context.clear_cookies()
+                await self.page.context.add_cookies(cookies)
+                
+                self.logger.info("Cookies loaded - session reused")
+                return True
+        except Exception as e:
+            self.logger.warning(f"Could not load cookies: {e}")
+        
+        return False
+
+    async def ensure_correct_page(self):
         """Ensure we're on the correct surf page"""
-        if not self.is_playwright_alive():
-            self.logger.error("Playwright dead during page check")
+        if not self.is_browser_alive():
+            self.logger.error("Browser dead during page check")
             return False
             
         try:
-            current_url = self.playwright_page.url.lower()
+            current_url = self.page.url.lower()
             
-            # If redirected to login, we need to re-login with Selenium
+            # If redirected to login, re-login
             if "login" in current_url:
-                self.logger.info("Playwright: Redirected to login, re-authenticating...")
-                self.state['is_logged_in'] = False
-                return await self.hybrid_login_flow()
+                self.logger.info("Auto-login: redirected to login")
+                return await self.playwright_login()
             
             # If not on surf page, navigate there
             if "surf" not in current_url and "adsha.re" in current_url:
-                self.logger.info("Playwright: Redirecting to surf page...")
-                await self.playwright_page.goto("https://adsha.re/surf")
-                await self.playwright_page.wait_for_selector("body")
-                self.smart_delay()
+                self.logger.info("Redirecting to surf page...")
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await self.smart_delay_async()
+                
+                # Check if redirected to login
+                if "login" in self.page.url.lower():
+                    self.logger.info("Auto-login: redirected after navigation")
+                    return await self.playwright_login()
+                    
                 return True
             elif "adsha.re" not in current_url:
-                self.logger.info("Playwright: Navigating to AdShare...")
-                await self.playwright_page.goto("https://adsha.re/surf")
-                await self.playwright_page.wait_for_selector("body")
-                self.smart_delay()
+                self.logger.info("Navigating to AdShare...")
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                await self.smart_delay_async()
                 return True
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Playwright page navigation error: {e}")
+            self.logger.error(f"Page navigation error: {e}")
             return False
 
-    async def hybrid_login_flow(self):
-        """Hybrid login flow: Selenium for login, transfer to Playwright"""
-        self.logger.info("Starting hybrid login flow...")
-        
-        # Step 1: Login with Selenium
-        if not self.selenium_driver:
-            if not self.setup_selenium():
-                self.logger.error("Cannot login - Selenium failed")
-                return False
-        
-        if not self.selenium_login():
-            self.logger.error("Selenium login failed")
+    def is_browser_alive(self):
+        """Check if browser is alive"""
+        try:
+            return (self.page and 
+                   not self.page.is_closed() and 
+                   self.browser and 
+                   self.browser.is_connected())
+        except Exception:
             return False
-        
-        # Step 2: Setup Playwright if not already done
-        if not self.playwright_page:
-            if not await self.setup_playwright():
-                self.logger.error("Cannot continue - Playwright failed")
-                return False
-        
-        # Step 3: Transfer session to Playwright
-        self.logger.info("Transferring session to Playwright...")
-        transfer_attempts = 0
-        while transfer_attempts < 3:
-            if await self.transfer_session_to_playwright():
-                self.logger.info("Hybrid login successful!")
-                return True
-            transfer_attempts += 1
-            self.logger.warning(f"Session transfer failed, attempt {transfer_attempts}/3")
-            await asyncio.sleep(5)
-        
-        self.logger.error("All session transfer attempts failed")
-        return False
 
     # ==================== GAME SOLVING METHODS ====================
     def calculate_similarity(self, str1, str2):
@@ -599,29 +498,28 @@ class HybridSymbolGameSolver:
         return None
 
     async def solve_symbol_game(self):
-        """Main game solving logic with Playwright"""
+        """Main game solving logic"""
         if not self.state['is_running']:
             return False
         
-        if not self.is_playwright_alive():
-            self.logger.error("Playwright dead during game solving")
+        if not self.is_browser_alive():
+            self.logger.error("Browser dead during game solving")
             return False
             
         try:
-            if not await self.ensure_correct_page_playwright():
+            if not await self.ensure_correct_page():
                 self.logger.info("Not on correct page, redirecting...")
-                await self.playwright_page.goto("https://adsha.re/surf")
-                if not await self.ensure_correct_page_playwright():
+                await self.page.goto("https://adsha.re/surf", wait_until='networkidle')
+                if not await self.ensure_correct_page():
                     return False
             
-            # Wait for SVG with longer timeout
-            question_svg = await self.playwright_page.wait_for_selector("svg", timeout=15000)
+            question_svg = await self.page.wait_for_selector("svg", timeout=15000)
             
             if not question_svg:
                 self.logger.info("Waiting for game to load...")
                 return False
             
-            links = await self.playwright_page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
+            links = await self.page.query_selector_all("a[href*='adsha.re'], button, .answer-option")
             
             if not links:
                 self.logger.info("No answer links found")
@@ -654,7 +552,7 @@ class HybridSymbolGameSolver:
         
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         
-        if not self.is_playwright_alive():
+        if not self.is_browser_alive():
             return
         
         # Screenshot on first failure
@@ -662,8 +560,12 @@ class HybridSymbolGameSolver:
             cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
             if cooldown_passed:
                 self.logger.info("Sending error screenshot...")
-                screenshot_result = self.send_screenshot()
-                self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
+                async def send_error_screenshot():
+                    screenshot_result = await self.send_screenshot("❌ Game Error - No game solved")
+                    self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
+                
+                if self.main_loop and not self.main_loop.is_closed():
+                    self.main_loop.create_task(send_error_screenshot())
                 self.state['last_error_screenshot'] = time.time()
         
         # Refresh page after configured failures
@@ -673,7 +575,7 @@ class HybridSymbolGameSolver:
             
             try:
                 if self.main_loop and not self.main_loop.is_closed():
-                    self.main_loop.run_until_complete(self.playwright_page.reload())
+                    self.main_loop.create_task(self.page.reload())
                 self.smart_delay()
                 self.logger.info("Page refreshed")
                 self.state['consecutive_fails'] = 0
@@ -689,13 +591,13 @@ class HybridSymbolGameSolver:
     # ==================== CREDIT SYSTEM ====================
     async def extract_credits(self):
         """Extract credit balance"""
-        if not self.is_playwright_alive():
+        if not self.is_browser_alive():
             return "BROWSER_DEAD"
         
         try:
-            await self.playwright_page.reload()
+            await self.page.reload()
             await asyncio.sleep(5)
-            page_source = await self.playwright_page.content()
+            page_source = await self.page.content()
             
             credit_patterns = [
                 r'(\d{1,3}(?:,\d{3})*)\s*Credits',
@@ -715,7 +617,7 @@ class HybridSymbolGameSolver:
 
     async def send_credit_report(self):
         """Send credit report to Telegram"""
-        credits = await self.extract_credits() if self.is_playwright_alive() else "BROWSER_DEAD"
+        credits = await self.extract_credits() if self.is_browser_alive() else "BROWSER_DEAD"
         self.state['last_credits'] = credits
         
         message = f"""
@@ -725,7 +627,7 @@ class HybridSymbolGameSolver:
 🎯 Games Solved: {self.state['total_solved']}
 🔄 Status: {self.state['status']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+⚠️ Fails: {self.state['consecutive_failures']}/{CONFIG['max_consecutive_failures']}
         """
         
         self.send_telegram(message)
@@ -738,7 +640,7 @@ class HybridSymbolGameSolver:
         
         while self.state['monitoring_active']:
             try:
-                if self.state['is_running'] and self.is_playwright_alive():
+                if self.state['is_running'] and self.is_browser_alive():
                     await self.send_credit_report()
                 else:
                     self.logger.info("Skipping credit report - solver not running")
@@ -761,9 +663,15 @@ class HybridSymbolGameSolver:
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
-        # Initial hybrid login
-        if not await self.hybrid_login_flow():
-            self.logger.error("Cannot start - Hybrid login failed")
+        # Setup Playwright
+        if not await self.setup_playwright():
+            self.logger.error("Cannot start - Playwright setup failed")
+            self.stop()
+            return
+        
+        # Initial login
+        if not await self.playwright_login():
+            self.logger.error("Cannot start - Login failed")
             self.stop()
             return
         
@@ -773,14 +681,14 @@ class HybridSymbolGameSolver:
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
                 # Browser health check
-                if not self.is_playwright_alive():
-                    self.logger.error("Playwright dead, stopping solver")
+                if not self.is_browser_alive():
+                    self.logger.error("Browser dead, stopping solver")
                     self.stop()
                     break
                 
                 # Refresh every 15 minutes
                 if cycle_count % 30 == 0 and cycle_count > 0:
-                    await self.playwright_page.reload()
+                    await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
@@ -838,7 +746,7 @@ class HybridSymbolGameSolver:
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        # Start monitoring in separate thread with same loop
+        # Start monitoring in separate thread
         if not self.state['monitoring_active']:
             def run_monitoring():
                 monitoring_loop = asyncio.new_event_loop()
@@ -855,9 +763,9 @@ class HybridSymbolGameSolver:
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("Hybrid solver started successfully!")
-        self.send_telegram("🚀 <b>Hybrid Solver Started!</b>")
-        return "✅ Hybrid solver started successfully!"
+        self.logger.info("Pure Playwright solver started successfully!")
+        self.send_telegram("🚀 <b>Pure Playwright Solver Started!</b>")
+        return "✅ Pure Playwright solver started successfully!"
 
     def stop(self):
         """Stop the solver"""
@@ -865,17 +773,10 @@ class HybridSymbolGameSolver:
         self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
-        # Close Selenium
-        if self.selenium_driver:
-            try:
-                self.selenium_driver.quit()
-            except Exception as e:
-                self.logger.warning(f"Selenium close failed: {e}")
-        
         # Close Playwright properly
         async def close_playwright():
-            if self.playwright_browser:
-                await self.playwright_browser.close()
+            if self.browser:
+                await self.browser.close()
             if self.playwright:
                 await self.playwright.stop()
         
@@ -885,9 +786,9 @@ class HybridSymbolGameSolver:
         except Exception as e:
             self.logger.warning(f"Playwright close failed: {e}")
         
-        self.logger.info("Hybrid solver stopped")
-        self.send_telegram("🛑 <b>Hybrid Solver Stopped!</b>")
-        return "✅ Hybrid solver stopped successfully!"
+        self.logger.info("Pure Playwright solver stopped")
+        self.send_telegram("🛑 <b>Pure Playwright Solver Stopped!</b>")
+        return "✅ Pure Playwright solver stopped successfully!"
 
     def status(self):
         """Get status"""
@@ -904,7 +805,7 @@ class HybridSymbolGameSolver:
 # Telegram Bot
 class TelegramBot:
     def __init__(self):
-        self.solver = HybridSymbolGameSolver()
+        self.solver = PlaywrightSymbolGameSolver()
         self.logger = logging.getLogger(__name__)
     
     def handle_updates(self):
@@ -953,21 +854,27 @@ class TelegramBot:
             async def get_credits():
                 return await self.solver.extract_credits()
             try:
-                # Use existing loop or create new one
-                try:
-                    loop = asyncio.get_event_loop()
-                except:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 credits = loop.run_until_complete(get_credits())
+                loop.close()
                 response = f"💰 <b>Credits:</b> {credits}"
             except Exception as e:
                 response = f"❌ Error getting credits: {e}"
         elif text.startswith('/screenshot'):
-            response = self.solver.send_screenshot()
+            async def take_screenshot():
+                return await self.solver.send_screenshot()
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                screenshot_result = loop.run_until_complete(take_screenshot())
+                loop.close()
+                response = screenshot_result
+            except Exception as e:
+                response = f"❌ Screenshot error: {e}"
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare Hybrid Solver Commands</b>
+🤖 <b>AdShare Pure Playwright Solver Commands</b>
 
 /start - Start solver
 /stop - Stop solver  
@@ -976,11 +883,11 @@ class TelegramBot:
 /screenshot - Get screenshot
 /help - Show help
 
-💡 <b>Hybrid Approach</b>
-🔐 Login: Selenium Firefox
+💡 <b>Pure Playwright Approach</b>
+🔐 Login: Playwright Firefox
 🎮 Game Solving: Playwright
 💾 Memory optimized
-🚀 Best of both worlds
+🚀 Single browser instance
             """
         
         if response:
@@ -988,5 +895,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare Hybrid Solver started!")
+    bot.logger.info("AdShare Pure Playwright Solver started!")
     bot.handle_updates()
