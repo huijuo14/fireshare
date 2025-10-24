@@ -16,7 +16,6 @@ import json
 import gc
 import asyncio
 import datetime
-import urllib.request
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
@@ -37,7 +36,7 @@ CONFIG = {
     'daily_target': 3000,
     'reset_time_ist': "05:30",  # 5:30 AM IST
     'restart_time_range': ("06:00", "07:00"),  # Random restart between 6-7 AM
-    'ublock_path': "/app/ublock_origin",
+    'ublock_path': "/app/ublock.xpi",  # Path to uBlock Origin from Dockerfile
     'natural_failure_rate': 0.001,  # 0.1% failure rate
     'micro_break_range': (1, 3),
     'short_break_frequency': (30, 50),
@@ -182,21 +181,6 @@ class UltimateAdshareBot:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    async def download_ublock(self):
-        """Download and install uBlock Origin"""
-        try:
-            ublock_url = "https://addons.mozilla.org/firefox/downloads/file/4598854/ublock_origin-1.67.0.xpi"
-            os.makedirs(os.path.dirname(CONFIG['ublock_path']), exist_ok=True)
-            xpi_path = f"{CONFIG['ublock_path']}.xpi"
-            
-            self.logger.info("Downloading uBlock Origin...")
-            urllib.request.urlretrieve(ublock_url, xpi_path)
-            self.logger.info("uBlock Origin downloaded successfully!")
-            return xpi_path
-        except Exception as e:
-            self.logger.error(f"Failed to download uBlock: {e}")
-            return None
-
     # ==================== PLAYWRIGHT SETUP WITH UBLOCK ====================
     async def setup_playwright(self):
         """Setup Playwright with uBlock Origin"""
@@ -204,11 +188,6 @@ class UltimateAdshareBot:
         
         try:
             self.playwright = await async_playwright().start()
-            
-            # Download uBlock if not exists
-            ublock_xpi_path = f"{CONFIG['ublock_path']}.xpi"
-            if not os.path.exists(ublock_xpi_path):
-                ublock_xpi_path = await self.download_ublock()
             
             launch_args = [
                 '--headless=new',
@@ -220,6 +199,14 @@ class UltimateAdshareBot:
                 '--disable-gpu',
             ]
             
+            # Add extension args if uBlock path exists
+            ublock_xpi_path = CONFIG['ublock_path']
+            if os.path.exists(ublock_xpi_path):
+                launch_args.append(f'--load-extension={ublock_xpi_path}')
+                self.logger.info("Launching with uBlock Origin extension")
+            else:
+                self.logger.warning("uBlock Origin not found, launching without extension")
+            
             # Browser context options
             context_options = {
                 'viewport': {'width': 1280, 'height': 720},
@@ -228,28 +215,13 @@ class UltimateAdshareBot:
                 'bypass_csp': True
             }
             
-            if ublock_xpi_path and os.path.exists(ublock_xpi_path):
-                self.logger.info("Launching with uBlock Origin extension")
-                
-                # For Firefox with extensions, we need to use persistent context
-                context = await self.playwright.firefox.launch_persistent_context(
-                    user_data_dir="/tmp/firefox_profile",
-                    headless=True,
-                    args=launch_args,
-                    **context_options
-                )
-                
-                # Install extension manually (Playwright doesn't support direct extension loading in headless)
-                self.logger.info("uBlock will be handled by Playwright's built-in adblock")
-                
-            else:
-                self.logger.info("Launching without uBlock (download failed)")
-                self.browser = await self.playwright.firefox.launch(
-                    headless=True,
-                    args=launch_args
-                )
-                
-                context = await self.browser.new_context(**context_options)
+            # Use persistent context for Firefox
+            context = await self.playwright.firefox.launch_persistent_context(
+                user_data_dir="/tmp/firefox_profile",
+                headless=True,
+                args=launch_args,
+                **context_options
+            )
             
             # Load cookies if they exist
             if os.path.exists(self.cookies_file):
@@ -270,7 +242,7 @@ class UltimateAdshareBot:
             return True
             
         except Exception as e:
-            self.logger.error(f"Playwright setup failed: {e}") 
+            self.logger.error(f"Playwright setup failed: {e}")
             return False
 
     async def smart_delay_async(self, min_delay=None, max_delay=None):
@@ -1146,7 +1118,7 @@ class UltimateAdshareBot:
 🎯 Total Games: {self.state['total_solved']}
 💰 Today's Credits: {self.state['credits_earned_today']}/{self.state['daily_target']}
 📈 Hourly Rate: {hourly_rate:.1f} games/h
-🌅 Next Reset: {next_reset.strftime('%Y-%m-%d %H:%M IST')}
+🌅 Next Reset: {next_reset.strftime('%Y-%-m-%d %H:%M IST')}
 ⏳ Time Until Reset: {hours}h {minutes}m
 🔄 Next Restart: {next_restart}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
