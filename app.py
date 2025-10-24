@@ -270,7 +270,7 @@ class UltimateAdshareBot:
             return True
             
         except Exception as e:
-            self.logger.error(f"Playwright setup failed: {e") }
+            self.logger.error(f"Playwright setup failed: {e}") 
             return False
 
     async def smart_delay_async(self, min_delay=None, max_delay=None):
