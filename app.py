@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - Playwright Edition
+AdShare Symbol Game Solver - Playwright Firefox Edition
 ULTRA MEMORY OPTIMIZED - Under 300MB Target
-Images allowed but limited to <1MB
-uBlock Origin installed
 """
 
 import os
@@ -61,7 +59,7 @@ class PlaywrightSymbolGameSolver:
         self.setup_telegram()
     
     def setup_logging(self):
-        """Setup logging with reduced frequency"""
+        """Setup logging"""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -80,7 +78,7 @@ class PlaywrightSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Playwright - Ultra Memory Optimized!</b>")
+                    self.send_telegram("🤖 <b>AdShare Solver Started with Playwright Firefox!</b>")
                     return True
             return False
         except Exception as e:
@@ -134,72 +132,64 @@ class PlaywrightSymbolGameSolver:
             return f"❌ Screenshot error: {str(e)}"
 
     async def setup_playwright(self):
-        """Setup Playwright with ULTRA MEMORY OPTIMIZATION"""
-        self.logger.info("Starting Playwright with ultra memory optimization...")
+        """Setup Playwright with Firefox and uBlock"""
+        self.logger.info("Starting Playwright with Firefox...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            # 🚀 ULTRA MEMORY OPTIMIZED BROWSER LAUNCH
-            self.browser = await self.playwright.chromium.launch(
+            # 🚀 ULTRA MEMORY OPTIMIZED FIREFOX LAUNCH
+            self.browser = await self.playwright.firefox.launch(
                 headless=True,
+                firefox_user_prefs={
+                    # 🎯 MEMORY OPTIMIZATIONS
+                    'browser.cache.disk.enable': False,
+                    'browser.cache.memory.enable': False,
+                    'browser.sessionhistory.max_entries': 2,
+                    'dom.ipc.processCount': 1,
+                    'content.processLimit': 1,
+                    'image.mem.max_decoded_image_kb': 512,
+                    'media.memory_cache_max_size': 1024,
+                    'javascript.options.mem.max': 25600,
+                    'browser.tabs.remote.autostart': False,
+                    'browser.tabs.remote.autostart.2': False,
+                },
                 args=[
-                    '--headless=new',
+                    '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-features=TranslateUI,BlinkGenPropertyTrees,CalculateNativeWinOcclusion',
-                    '--disable-ipc-flooding-protection',
-                    '--memory-pressure-off',
-                    '--max_old_space_size=128',  # 🎯 CRITICAL: Limit V8 memory to 128MB
-                    '--single-process',  # 🎯 BIGGEST SAVINGS: Single process mode
-                    '--aggressive-cache-discard',
-                    '--max-active-webgl-contexts=1',
-                    '--max-unused-resource-memory-usage-percentage=5',
+                    '--single-process',
+                    '--memory-pressure',
                 ]
             )
             
-            # Create context with memory optimizations
+            # Create context
             context = await self.browser.new_context(
                 viewport={'width': 1280, 'height': 720},
                 ignore_https_errors=True,
                 java_script_enabled=True,
-                has_touch=False,
-                is_mobile=False,
-                # Image settings - allow but limit
-                extra_http_headers={
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                }
             )
             
             # Install uBlock Origin
             ublock_path = '/app/ublock.xpi'
             if os.path.exists(ublock_path):
                 await context.add_init_script(f"""
+                    // Load uBlock Origin
                     const script = document.createElement('script');
                     script.src = 'file://{ublock_path}';
                     document.head.appendChild(script);
+                    console.log('uBlock Origin loaded');
                 """)
                 self.logger.info("uBlock Origin installed")
             
             self.page = await context.new_page()
             
-            # Set aggressive timeouts and limits
-            self.page.set_default_timeout(10000)
-            self.page.set_default_navigation_timeout(20000)
+            # Set timeouts
+            self.page.set_default_timeout(15000)
+            self.page.set_default_navigation_timeout(30000)
             
-            # Set content security policy to limit resources
-            await self.page.set_extra_http_headers({
-                'Accept-Encoding': 'gzip',
-                'Cache-Control': 'no-cache'
-            })
-            
-            self.logger.info("Playwright started with ultra memory optimization!")
+            self.logger.info("Playwright with Firefox started successfully!")
             return True
             
         except Exception as e:
@@ -214,7 +204,7 @@ class PlaywrightSymbolGameSolver:
         except Exception:
             return False
 
-    # ==================== SIMPLIFIED SESSION MANAGEMENT ====================
+    # ==================== SESSION MANAGEMENT ====================
     def save_cookies(self):
         """Save cookies to file"""
         try:
@@ -251,13 +241,11 @@ class PlaywrightSymbolGameSolver:
         try:
             current_url = self.page.url.lower()
             
-            # If redirected to login, session invalid
             if "login" in current_url:
                 self.state['is_logged_in'] = False
                 self.logger.info("Session invalid - redirected to login")
                 return False
             
-            # If on surf/dashboard, session valid
             if "surf" in current_url or "dashboard" in current_url:
                 self.state['is_logged_in'] = True
                 return True
@@ -272,14 +260,14 @@ class PlaywrightSymbolGameSolver:
         """Smart login flow with session reuse"""
         self.logger.info("Starting smart login flow...")
         
-        # Step 1: Try to use existing session
+        # Try existing session first
         if self.state['is_logged_in']:
             self.logger.info("Attempting to reuse session...")
             if self.load_cookies() and self.validate_session():
                 self.logger.info("Session reused successfully!")
                 return True
         
-        # Step 2: Force login if needed
+        # Force login if needed
         self.logger.info("Session invalid, forcing login...")
         if await self.force_login_async():
             self.state['is_logged_in'] = True
@@ -341,9 +329,9 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Page navigation error: {e}")
             return False
 
-    # ==================== ORIGINAL LOGIN METHOD ====================
+    # ==================== LOGIN METHOD ====================
     async def force_login_async(self):
-        """ORIGINAL WORKING LOGIN - DO NOT CHANGE"""
+        """ORIGINAL WORKING LOGIN"""
         try:
             self.logger.info("LOGIN: Attempting login...")
             
@@ -462,7 +450,7 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Login error: {e}")
             return False
 
-    # ==================== ORIGINAL GAME SOLVING METHODS ====================
+    # ==================== GAME SOLVING METHODS ====================
     def calculate_similarity(self, str1, str2):
         """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
@@ -542,7 +530,7 @@ class PlaywrightSymbolGameSolver:
         return None
 
     async def solve_symbol_game_async(self):
-        """Main game solving logic with browser health check"""
+        """Main game solving logic"""
         if not self.state['is_running']:
             return False
         
@@ -693,7 +681,7 @@ class PlaywrightSymbolGameSolver:
         
         self.logger.info("Credit monitoring stopped")
 
-    # ==================== MAIN SOLVER LOOP WITH MEMORY CLEANUP ====================
+    # ==================== MAIN SOLVER LOOP ====================
     async def solver_loop_async(self):
         """Main solving loop with memory cleanup"""
         self.logger.info("Starting solver loop...")
@@ -783,8 +771,8 @@ class PlaywrightSymbolGameSolver:
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("Solver started with Playwright memory optimization!")
-        self.send_telegram("🚀 <b>Solver Started with Playwright - Ultra Memory Optimized!</b>")
+        self.logger.info("Solver started with Playwright Firefox!")
+        self.send_telegram("🚀 <b>Solver Started with Playwright Firefox!</b>")
         return "✅ Solver started successfully!"
 
     def stop(self):
@@ -881,7 +869,7 @@ class TelegramBot:
             response = self.solver.send_screenshot()
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare Solver Commands - Playwright Edition</b>
+🤖 <b>AdShare Solver Commands - Playwright Firefox</b>
 
 /start - Start solver
 /stop - Stop solver  
@@ -892,10 +880,9 @@ class TelegramBot:
 
 💡 <b>ULTRA MEMORY OPTIMIZED</b>
 🎯 Target: 200-300MB RAM
+🦊 Firefox with uBlock
 🚀 Single process mode
-🛡️ uBlock Origin installed
 💾 Aggressive memory limits
-🧹 Automatic cleanup
             """
         
         if response:
@@ -903,5 +890,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare Solver with Playwright Ultra Memory Optimization started!")
+    bot.logger.info("AdShare Solver with Playwright Firefox started!")
     bot.handle_updates()
