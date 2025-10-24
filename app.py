@@ -3,6 +3,7 @@
 AdShare ULTIMATE BOT - Complete Edition
 ✅ 12+ Login Methods ✅ uBlock Extension ✅ Telegram Control
 ✅ Cookie Management ✅ Daily Targets ✅ 24/7 Operation
+✅ 0.1% Failure Rate ✅ Smart Breaks ✅ Anti-Detection
 """
 
 import os
@@ -35,7 +36,17 @@ CONFIG = {
     'screenshot_cooldown_minutes': 5,
     'daily_target': 3000,
     'reset_time_ist': "05:30",  # 5:30 AM IST
-    'ublock_path': "/app/ublock_origin",  # uBlock Origin extension
+    'ublock_path': "/app/ublock_origin",
+    'natural_failure_rate': 0.001,  # 0.1% failure rate
+    'micro_break_range': (1, 2),
+    'short_break_frequency': (30, 50),
+    'short_break_duration': (30, 120),
+    'meal_break_frequency': (200, 300),
+    'meal_break_duration': (900, 1800),
+    'long_break_chance': 0.01,
+    'long_break_duration': (3600, 8800),
+    'night_hours': [23, 0, 1, 2, 3, 4, 5],
+    'night_slowdown_factor': 0.4,
 }
 
 class UltimateAdshareBot:
@@ -59,6 +70,8 @@ class UltimateAdshareBot:
             'credits_earned_today': 0,
             'daily_target': CONFIG['daily_target'],
             'last_reset_date': datetime.date.today().isoformat(),
+            'games_solved_today': 0,
+            'start_time': time.time(),
         }
         
         self.solver_thread = None
@@ -152,11 +165,13 @@ class UltimateAdshareBot:
             self.logger.info(f"uBlock extension: {'Found' if ublock_exists else 'Not found'}")
             
             launch_args = [
-                '--headless',
+                '--headless=new',
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-web-security',
                 '--disable-features=VizDisplayCompositor',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
             ]
             
             if ublock_exists:
@@ -205,15 +220,45 @@ class UltimateAdshareBot:
             self.logger.error(f"Playwright setup failed: {e}")
             return False
 
-    async def smart_delay_async(self):
+    async def smart_delay_async(self, min_delay=None, max_delay=None):
         """Async version of smart delay"""
-        if CONFIG['random_delay']:
-            delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
-        else:
-            delay = CONFIG['base_delay']
+        if min_delay is None:
+            min_delay = CONFIG['min_delay']
+        if max_delay is None:
+            max_delay = CONFIG['max_delay']
         
+        delay = random.uniform(min_delay, max_delay)
         await asyncio.sleep(delay)
         return delay
+
+    # ==================== BREAK SYSTEM ====================
+    async def take_short_break(self):
+        """Take a short break"""
+        break_duration = random.randint(*CONFIG['short_break_duration'])
+        self.logger.info(f"☕ Taking short break: {break_duration}s")
+        self.send_telegram(f"☕ <b>Short Break</b>\n⏰ {break_duration} seconds")
+        await asyncio.sleep(break_duration)
+
+    async def take_meal_break(self):
+        """Take a meal break"""
+        break_duration = random.randint(*CONFIG['meal_break_duration'])
+        minutes = break_duration // 60
+        self.logger.info(f"🍔 Taking meal break: {minutes}min")
+        self.send_telegram(f"🍔 <b>Meal Break</b>\n⏰ {minutes} minutes")
+        await asyncio.sleep(break_duration)
+
+    async def take_long_break(self):
+        """Take a long break"""
+        break_duration = random.randint(*CONFIG['long_break_duration'])
+        hours = break_duration // 3600
+        self.logger.info(f"🌙 Taking long break: {hours}h")
+        self.send_telegram(f"🌙 <b>Long Break</b>\n⏰ {hours} hours")
+        await asyncio.sleep(break_duration)
+
+    def is_night_time(self):
+        """Check if it's night time (10PM-6AM IST)"""
+        now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
+        return now_ist.hour in CONFIG['night_hours']
 
     # ==================== ULTIMATE LOGIN WITH 12+ METHODS ====================
     async def ultimate_login(self):
@@ -513,7 +558,7 @@ class UltimateAdshareBot:
     async def check_daily_reset(self):
         """Check if daily reset is needed"""
         try:
-            now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)  # UTC to IST
+            now_ist = datetime.datetime.now() + datetime.timedelta(hours=5, minutes=30)
             current_date = now_ist.date().isoformat()
             
             if current_date != self.state['last_reset_date']:
@@ -522,10 +567,12 @@ class UltimateAdshareBot:
                 current_time = now_ist.time()
                 
                 if current_time >= reset_time:
+                    old_credits = self.state['credits_earned_today']
                     self.state['credits_earned_today'] = 0
+                    self.state['games_solved_today'] = 0
                     self.state['last_reset_date'] = current_date
-                    self.logger.info(f"💰 Daily reset completed! New target: {self.state['daily_target']}")
-                    self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits")
+                    self.logger.info(f"💰 Daily reset completed! Previous: {old_credits}, New target: {self.state['daily_target']}")
+                    self.send_telegram(f"🌅 <b>Daily Reset Complete!</b>\n🎯 New target: {self.state['daily_target']} credits\n💰 Yesterday: {old_credits} credits")
                     return True
             
             return False
@@ -604,12 +651,17 @@ class UltimateAdshareBot:
         return common_chars / max_len if max_len > 0 else 0.0
 
     async def compare_symbols(self, question_svg, answer_svg):
-        """Compare SVG symbols"""
+        """Compare SVG symbols - 0.1% failure rate"""
         try:
             question_content = await question_svg.inner_html()
             answer_content = await answer_svg.inner_html()
             
             if not question_content or not answer_content:
+                return {'match': False, 'confidence': 0.0, 'exact': False}
+            
+            # 0.1% intentional failure rate for realism
+            if random.random() < CONFIG['natural_failure_rate']:
+                self.logger.info("🤖 0.1% intentional human-like failure")
                 return {'match': False, 'confidence': 0.0, 'exact': False}
             
             def clean_svg(svg_text):
@@ -703,9 +755,15 @@ class UltimateAdshareBot:
             best_match = await self.find_best_match(question_svg, links)
             
             if best_match:
+                # Add human-like hesitation before clicking
+                if random.random() < 0.15:  # 15% chance to hesitate
+                    hesitation = random.uniform(0.5, 2.0)
+                    await asyncio.sleep(hesitation)
+                
                 await best_match['link'].click()
                 self.state['total_solved'] += 1
                 self.state['credits_earned_today'] += 1
+                self.state['games_solved_today'] += 1
                 self.state['consecutive_fails'] = 0
                 match_type = "EXACT" if best_match['exact'] else "FUZZY"
                 self.logger.info(f"{match_type} Match! Total: {self.state['total_solved']}")
@@ -714,7 +772,7 @@ class UltimateAdshareBot:
                 if self.state['credits_earned_today'] >= self.state['daily_target']:
                     self.logger.info(f"🎯 Daily target reached! {self.state['credits_earned_today']}/{self.state['daily_target']}")
                     self.send_telegram(f"🎯 <b>Daily Target Reached!</b>\n💰 {self.state['credits_earned_today']}/{self.state['daily_target']} credits")
-                    # Don't stop, just continue - reset will happen automatically
+                    # Continue solving for extra credits
                 
                 return True
             else:
@@ -786,6 +844,7 @@ class UltimateAdshareBot:
         consecutive_fails = 0
         cycle_count = 0
         last_credit_check = 0
+        games_solved = 0
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
@@ -795,7 +854,9 @@ class UltimateAdshareBot:
                     break
                 
                 # Check daily reset
-                await self.check_daily_reset()
+                reset_occurred = await self.check_daily_reset()
+                if reset_occurred:
+                    games_solved = 0  # Reset counter after daily reset
                 
                 # Periodic credit check
                 if time.time() - last_credit_check > CONFIG['credit_check_interval']:
@@ -803,20 +864,46 @@ class UltimateAdshareBot:
                     self.logger.info(credit_info)
                     last_credit_check = time.time()
                 
+                # Page refresh every 30 games
                 if cycle_count % 30 == 0 and cycle_count > 0:
                     await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
+                # Memory cleanup every 50 games
                 if cycle_count % 50 == 0:
                     gc.collect()
                     await self.save_cookies()
                 
+                # Check for breaks
+                if games_solved > 0:
+                    # Short breaks every 30-50 games
+                    if games_solved % random.randint(*CONFIG['short_break_frequency']) == 0:
+                        await self.take_short_break()
+                    
+                    # Meal breaks every 200-300 games
+                    if games_solved % random.randint(*CONFIG['meal_break_frequency']) == 0:
+                        await self.take_meal_break()
+                    
+                    # Long breaks (2% chance)
+                    if random.random() < CONFIG['long_break_chance']:
+                        await self.take_long_break()
+                
+                # Night mode slowdown
+                if self.is_night_time():
+                    night_delay = random.uniform(3, 8) * CONFIG['night_slowdown_factor']
+                    await asyncio.sleep(night_delay)
+                
+                # Solve game
                 game_solved = await self.solve_symbol_game()
                 
                 if game_solved:
+                    games_solved += 1
                     consecutive_fails = 0
-                    await asyncio.sleep(random.uniform(1, 3))
+                    
+                    # Micro-break between games
+                    await self.smart_delay_async()
+                    
                 else:
                     consecutive_fails += 1
                     await asyncio.sleep(5)
@@ -840,6 +927,7 @@ class UltimateAdshareBot:
         
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
+        self.state['start_time'] = time.time()
         
         def run_solver():
             loop = asyncio.new_event_loop()
@@ -903,12 +991,18 @@ class UltimateAdshareBot:
         hours, remainder = divmod(time_until_reset.seconds, 3600)
         minutes = remainder // 60
         
+        # Calculate hourly rate
+        runtime = time.time() - self.state['start_time']
+        hours_running = max(1, runtime / 3600)
+        hourly_rate = self.state['games_solved_today'] / hours_running
+        
         return f"""
 📊 <b>Status Report</b>
 ⏰ {now_ist.strftime('%H:%M:%S IST')}
 🔄 Status: {self.state['status']}
-🎯 Games Solved: {self.state['total_solved']}
+🎯 Total Games: {self.state['total_solved']}
 💰 Today's Credits: {self.state['credits_earned_today']}/{self.state['daily_target']}
+📈 Hourly Rate: {hourly_rate:.1f} games/h
 🌅 Next Reset: {next_reset.strftime('%Y-%m-%d %H:%M IST')}
 ⏳ Time Until Reset: {hours}h {minutes}m
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
@@ -989,6 +1083,8 @@ class TelegramBot:
 🍪 Cookie management
 🎯 Daily targets
 📊 24/7 operation
+⏰ Smart break system
+🎯 99.9% success rate
             """
         elif text.startswith('/credits'):
             async def check_credits_async():
