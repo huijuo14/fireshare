@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - Playwright Firefox Edition
-ULTRA MEMORY OPTIMIZED - Under 300MB Target
+AdShare Symbol Game Solver - Playwright Edition
+DIRECT CONVERSION FROM WORKING SELENIUM VERSION
 """
 
 import os
@@ -14,7 +14,7 @@ import threading
 import json
 import gc
 import asyncio
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
 # ==================== CONFIGURATION ====================
@@ -41,7 +41,7 @@ class PlaywrightSymbolGameSolver:
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
-        # State Management
+        # State Management (same as Selenium)
         self.state = {
             'is_running': False,
             'total_solved': 0,
@@ -78,7 +78,7 @@ class PlaywrightSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Playwright Firefox!</b>")
+                    self.send_telegram("🤖 <b>AdShare Solver Started with Playwright!</b>")
                     return True
             return False
         except Exception as e:
@@ -103,15 +103,15 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Telegram send failed: {e}")
             return False
 
-    async def send_screenshot_async(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram - FIXED ASYNC VERSION"""
+    def send_screenshot(self):
+        """Send screenshot to Telegram - SIMPLE SYNC VERSION"""
         if not self.page or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
         try:
             screenshot_path = "/tmp/screenshot.png"
-            # FIX: Added await for async screenshot
-            await self.page.screenshot(path=screenshot_path)
+            # Take screenshot synchronously
+            asyncio.run(self.page.screenshot(path=screenshot_path))
             
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendPhoto"
             
@@ -119,7 +119,7 @@ class PlaywrightSymbolGameSolver:
                 files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
+                    'caption': f'🖥️ Screenshot - {time.strftime("%H:%M:%S")}'
                 }
                 
                 response = requests.post(url, files=files, data=data, timeout=30)
@@ -132,85 +132,41 @@ class PlaywrightSymbolGameSolver:
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
 
-    # Wrapper for sync code to call async screenshot
-    def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Sync wrapper for async screenshot"""
-        try:
-            if self.page and self.telegram_chat_id:
-                # Run async function in thread
-                result = asyncio.run(self.send_screenshot_async(caption))
-                return result
-            else:
-                return "❌ Browser not running or Telegram not configured"
-        except Exception as e:
-            return f"❌ Screenshot error: {str(e)}"
-
     async def setup_playwright(self):
-        """Setup Playwright with Firefox and uBlock"""
-        self.logger.info("Starting Playwright with Firefox...")
+        """Setup Playwright - SIMPLE AND RELIABLE"""
+        self.logger.info("Starting Playwright...")
         
         try:
             self.playwright = await async_playwright().start()
             
-            # 🚀 ULTRA MEMORY OPTIMIZED FIREFOX LAUNCH
+            # Simple Firefox launch (no complex settings that might break)
             self.browser = await self.playwright.firefox.launch(
                 headless=True,
-                firefox_user_prefs={
-                    # 🎯 MEMORY OPTIMIZATIONS
-                    'browser.cache.disk.enable': False,
-                    'browser.cache.memory.enable': False,
-                    'browser.sessionhistory.max_entries': 2,
-                    'dom.ipc.processCount': 1,
-                    'content.processLimit': 1,
-                    'image.mem.max_decoded_image_kb': 512,
-                    'media.memory_cache_max_size': 1024,
-                    'javascript.options.mem.max': 25600,
-                    'browser.tabs.remote.autostart': False,
-                    'browser.tabs.remote.autostart.2': False,
-                },
                 args=[
                     '--headless',
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--single-process',
-                    '--memory-pressure',
                 ]
             )
             
             # Create context
             context = await self.browser.new_context(
-                viewport={'width': 1280, 'height': 720},
-                ignore_https_errors=True,
-                java_script_enabled=True,
+                viewport={'width': 1280, 'height': 720}
             )
-            
-            # Install uBlock Origin
-            ublock_path = '/app/ublock.xpi'
-            if os.path.exists(ublock_path):
-                await context.add_init_script(f"""
-                    // Load uBlock Origin
-                    const script = document.createElement('script');
-                    script.src = 'file://{ublock_path}';
-                    document.head.appendChild(script);
-                    console.log('uBlock Origin loaded');
-                """)
-                self.logger.info("uBlock Origin installed")
             
             self.page = await context.new_page()
             
-            # Set timeouts
-            self.page.set_default_timeout(15000)
-            self.page.set_default_navigation_timeout(30000)
+            # Set reasonable timeouts
+            self.page.set_default_timeout(30000)
+            self.page.set_default_navigation_timeout(45000)
             
-            self.logger.info("Playwright with Firefox started successfully!")
+            self.logger.info("Playwright started successfully!")
             return True
             
         except Exception as e:
             self.logger.error(f"Playwright setup failed: {e}")
             return False
 
-    # ==================== BROWSER HEALTH CHECK ====================
     def is_browser_alive(self):
         """Quick browser health check"""
         try:
@@ -219,25 +175,25 @@ class PlaywrightSymbolGameSolver:
             return False
 
     # ==================== SESSION MANAGEMENT ====================
-    def save_cookies(self):
+    async def save_cookies(self):
         """Save cookies to file"""
         try:
             if self.page and self.state['is_logged_in'] and self.is_browser_alive():
-                cookies = self.page.context.cookies()
+                cookies = await self.page.context.cookies()
                 with open(self.cookies_file, 'w') as f:
                     json.dump(cookies, f)
                 self.logger.info("Cookies saved")
         except Exception as e:
             self.logger.warning(f"Could not save cookies: {e}")
 
-    def load_cookies(self):
+    async def load_cookies(self):
         """Load cookies from file"""
         try:
             if os.path.exists(self.cookies_file) and self.is_browser_alive():
                 with open(self.cookies_file, 'r') as f:
                     cookies = json.load(f)
                 
-                await self.page.goto("https://adsha.re", wait_until="networkidle")
+                await self.page.goto("https://adsha.re")
                 await self.page.context.add_cookies(cookies)
                 
                 self.logger.info("Cookies loaded - session reused")
@@ -247,8 +203,8 @@ class PlaywrightSymbolGameSolver:
         
         return False
 
-    async def validate_session_async(self):
-        """Check if session is still valid - ASYNC VERSION"""
+    async def validate_session(self):
+        """Check if session is still valid"""
         if not self.is_browser_alive():
             return False
         
@@ -270,45 +226,28 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Session validation failed: {e}")
             return False
 
-    async def smart_login_flow_async(self):
+    async def smart_login_flow(self):
         """Smart login flow with session reuse"""
         self.logger.info("Starting smart login flow...")
         
-        # Try existing session first
+        # Step 1: Try to use existing session
         if self.state['is_logged_in']:
             self.logger.info("Attempting to reuse session...")
-            if await self.load_cookies_async() and await self.validate_session_async():
+            if await self.load_cookies() and await self.validate_session():
                 self.logger.info("Session reused successfully!")
                 return True
         
-        # Force login if needed
+        # Step 2: Force login if needed
         self.logger.info("Session invalid, forcing login...")
-        if await self.force_login_async():
+        if await self.force_login():
             self.state['is_logged_in'] = True
-            self.save_cookies()
+            await self.save_cookies()
             self.logger.info("New login successful!")
             return True
         else:
             self.state['is_logged_in'] = False
             self.logger.error("Login failed")
             return False
-
-    async def load_cookies_async(self):
-        """Load cookies from file - ASYNC VERSION"""
-        try:
-            if os.path.exists(self.cookies_file) and self.is_browser_alive():
-                with open(self.cookies_file, 'r') as f:
-                    cookies = json.load(f)
-                
-                await self.page.goto("https://adsha.re", wait_until="networkidle")
-                await self.page.context.add_cookies(cookies)
-                
-                self.logger.info("Cookies loaded - session reused")
-                return True
-        except Exception as e:
-            self.logger.warning(f"Could not load cookies: {e}")
-        
-        return False
 
     def smart_delay(self):
         """Randomized delay between actions"""
@@ -320,7 +259,7 @@ class PlaywrightSymbolGameSolver:
         time.sleep(delay)
         return delay
 
-    async def ensure_correct_page_async(self):
+    async def ensure_correct_page(self):
         """Ensure we're on the correct surf page with auto-login"""
         if not self.is_browser_alive():
             self.logger.error("Browser dead during page check")
@@ -332,26 +271,26 @@ class PlaywrightSymbolGameSolver:
             # If redirected to login page, auto-login
             if "login" in current_url:
                 self.logger.info("Auto-login: redirected to login")
-                return await self.smart_login_flow_async()
+                return await self.smart_login_flow()
             
             # If not on surf page, navigate there
             if "surf" not in current_url and "adsha.re" in current_url:
                 self.logger.info("Redirecting to surf page...")
-                await self.page.goto("https://adsha.re/surf", wait_until="networkidle")
-                await self.page.wait_for_selector("body", timeout=15000)
-                await asyncio.sleep(2)
+                await self.page.goto("https://adsha.re/surf")
+                await self.page.wait_for_selector("body")
+                self.smart_delay()
                 
                 # Check if redirected to login
                 if "login" in self.page.url.lower():
                     self.logger.info("Auto-login: redirected after navigation")
-                    return await self.smart_login_flow_async()
+                    return await self.smart_login_flow()
                     
                 return True
             elif "adsha.re" not in current_url:
                 self.logger.info("Navigating to AdShare...")
-                await self.page.goto("https://adsha.re/surf", wait_until="networkidle")
-                await self.page.wait_for_selector("body", timeout=15000)
-                await asyncio.sleep(2)
+                await self.page.goto("https://adsha.re/surf")
+                await self.page.wait_for_selector("body")
+                self.smart_delay()
                 return True
             
             return True
@@ -360,18 +299,17 @@ class PlaywrightSymbolGameSolver:
             self.logger.error(f"Page navigation error: {e}")
             return False
 
-    # ==================== LOGIN METHOD ====================
-    async def force_login_async(self):
-        """ORIGINAL WORKING LOGIN - FIXED VERSION"""
+    # ==================== ORIGINAL LOGIN METHOD ====================
+    async def force_login(self):
+        """ORIGINAL WORKING LOGIN - DIRECT CONVERSION FROM SELENIUM"""
         try:
             self.logger.info("LOGIN: Attempting login...")
             
             login_url = "https://adsha.re/login"
-            await self.page.goto(login_url, wait_until="networkidle")
+            await self.page.goto(login_url)
+            await self.page.wait_for_selector("body")
             
-            await self.page.wait_for_selector("body", timeout=20000)
-            
-            await asyncio.sleep(2)
+            self.smart_delay()
             
             page_source = await self.page.content()
             soup = BeautifulSoup(page_source, 'html.parser')
@@ -396,7 +334,7 @@ class PlaywrightSymbolGameSolver:
             
             self.logger.info(f"Password field: {password_field_name}")
             
-            # Fill email
+            # Fill email - EXACT SAME LOGIC AS SELENIUM
             email_selectors = [
                 "input[name='mail']",
                 "input[type='email']",
@@ -416,9 +354,9 @@ class PlaywrightSymbolGameSolver:
             if not email_filled:
                 return False
             
-            await asyncio.sleep(2)
+            self.smart_delay()
             
-            # Fill password
+            # Fill password - EXACT SAME LOGIC AS SELENIUM
             password_selector = f"input[name='{password_field_name}']"
             try:
                 await self.page.fill(password_selector, CONFIG['password'])
@@ -426,100 +364,63 @@ class PlaywrightSymbolGameSolver:
             except:
                 return False
             
-            await asyncio.sleep(2)
+            self.smart_delay()
             
-            # Click login button - FIXED: Better button detection
-            login_clicked = False
-            
-            # Try multiple button selectors
+            # Click login button - EXACT SAME LOGIC AS SELENIUM
             login_selectors = [
                 "button[type='submit']",
-                "input[type='submit']", 
-                "button:has-text('Login')",
-                "button:has-text('Sign In')",
+                "input[type='submit']",
+                "button",
                 "input[value*='Login']",
-                "input[value*='Sign']",
-                "form[name='login'] button",
-                "button"
+                "input[value*='Sign']"
             ]
             
+            login_clicked = False
             for selector in login_selectors:
                 try:
-                    buttons = await self.page.query_selector_all(selector)
-                    for button in buttons:
-                        if await button.is_visible():
-                            await button.click()
-                            self.logger.info(f"Login button clicked with selector: {selector}")
-                            login_clicked = True
-                            break
-                    if login_clicked:
-                        break
+                    await self.page.click(selector)
+                    self.logger.info("Login button clicked")
+                    login_clicked = True
+                    break
                 except:
                     continue
             
-            # If no button found, try form submission
             if not login_clicked:
                 try:
-                    await self.page.keyboard.press('Enter')
-                    self.logger.info("Form submitted with Enter key")
+                    await self.page.click("form[name='login']")
+                    self.logger.info("Form submitted")
                     login_clicked = True
                 except:
                     pass
             
-            # Wait for navigation with timeout
-            try:
-                await self.page.wait_for_load_state('networkidle', timeout=10000)
-            except:
-                self.logger.info("Waiting for page load...")
+            self.smart_delay()
+            await asyncio.sleep(8)  # Wait for login to process
             
-            await asyncio.sleep(5)
+            # Verify login - EXACT SAME LOGIC AS SELENIUM
+            await self.page.goto("https://adsha.re/surf")
+            self.smart_delay()
             
-            # Check if login was successful
-            current_url = self.page.url.lower()
-            
+            current_url = self.page.url
             if "surf" in current_url or "dashboard" in current_url:
                 self.logger.info("Login successful!")
                 self.state['is_logged_in'] = True
-                self.save_cookies()
+                await self.save_cookies()
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
-            elif "login" in current_url:
-                # Login failed, check for error messages
-                error_selectors = [
-                    ".error",
-                    ".alert",
-                    "[class*='error']",
-                    "[class*='alert']"
-                ]
-                
-                for selector in error_selectors:
-                    try:
-                        error_elements = await self.page.query_selector_all(selector)
-                        for error in error_elements:
-                            error_text = await error.text_content()
-                            if error_text and len(error_text.strip()) > 0:
-                                self.logger.error(f"Login error: {error_text.strip()}")
-                    except:
-                        continue
-                
-                self.logger.error("Login failed - still on login page")
-                return False
             else:
-                # Might be on some intermediate page, continue
-                self.logger.info("Login may need verification, continuing...")
-                self.state['is_logged_in'] = True
-                return True
+                if "login" in current_url:
+                    self.logger.error("Login failed - still on login page")
+                    return False
+                else:
+                    self.logger.info("Login may need verification, continuing...")
+                    self.state['is_logged_in'] = True
+                    return True
                 
         except Exception as e:
             self.logger.error(f"Login error: {e}")
-            # Try to take screenshot of error
-            try:
-                await self.send_screenshot_async("❌ Login Error")
-            except:
-                pass
             return False
 
-    # ==================== GAME SOLVING METHODS ====================
+    # ==================== ORIGINAL GAME SOLVING METHODS ====================
     def calculate_similarity(self, str1, str2):
         """Calculate string similarity"""
         if len(str1) == 0 or len(str2) == 0:
@@ -598,7 +499,7 @@ class PlaywrightSymbolGameSolver:
         
         return None
 
-    async def solve_symbol_game_async(self):
+    async def solve_symbol_game(self):
         """Main game solving logic"""
         if not self.state['is_running']:
             return False
@@ -608,10 +509,10 @@ class PlaywrightSymbolGameSolver:
             return False
             
         try:
-            if not await self.ensure_correct_page_async():
+            if not await self.ensure_correct_page():
                 self.logger.info("Not on correct page, redirecting...")
-                await self.page.goto("https://adsha.re/surf", wait_until="networkidle")
-                if not await self.ensure_correct_page_async():
+                await self.page.goto("https://adsha.re/surf")
+                if not await self.ensure_correct_page():
                     return False
             
             question_svg = await self.page.wait_for_selector("svg", timeout=10000)
@@ -636,10 +537,6 @@ class PlaywrightSymbolGameSolver:
                 self.handle_consecutive_failures()
                 return False
             
-        except PlaywrightTimeoutError:
-            self.logger.info("Waiting for game elements...")
-            self.handle_consecutive_failures()
-            return False
         except Exception as e:
             self.logger.error(f"Solver error: {e}")
             self.handle_consecutive_failures()
@@ -661,7 +558,7 @@ class PlaywrightSymbolGameSolver:
             cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
             if cooldown_passed:
                 self.logger.info("Sending error screenshot...")
-                screenshot_result = self.send_screenshot("❌ Game Error - No game solved")
+                screenshot_result = self.send_screenshot()
                 self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
                 self.state['last_error_screenshot'] = time.time()
         
@@ -671,7 +568,7 @@ class PlaywrightSymbolGameSolver:
             self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
             
             try:
-                asyncio.create_task(self.page.reload(wait_until="networkidle"))
+                asyncio.run(self.page.reload())
                 self.smart_delay()
                 self.logger.info("Page refreshed")
                 self.state['consecutive_fails'] = 0
@@ -685,13 +582,13 @@ class PlaywrightSymbolGameSolver:
             self.stop()
 
     # ==================== CREDIT SYSTEM ====================
-    async def extract_credits_async(self):
+    async def extract_credits(self):
         """Extract credit balance"""
         if not self.is_browser_alive():
             return "BROWSER_DEAD"
         
         try:
-            await self.page.reload(wait_until="networkidle")
+            await self.page.reload()
             await asyncio.sleep(5)
             page_source = await self.page.content()
             
@@ -711,9 +608,9 @@ class PlaywrightSymbolGameSolver:
         except Exception as e:
             return f"ERROR: {str(e)}"
 
-    async def send_credit_report_async(self):
+    async def send_credit_report(self):
         """Send credit report to Telegram"""
-        credits = await self.extract_credits_async() if self.is_browser_alive() else "BROWSER_DEAD"
+        credits = await self.extract_credits() if self.is_browser_alive() else "BROWSER_DEAD"
         self.state['last_credits'] = credits
         
         message = f"""
@@ -729,7 +626,7 @@ class PlaywrightSymbolGameSolver:
         self.send_telegram(message)
         self.logger.info(f"Credit report: {credits}")
 
-    async def monitoring_loop_async(self):
+    async def monitoring_loop(self):
         """Background credit monitoring"""
         self.logger.info("Starting credit monitoring...")
         self.state['monitoring_active'] = True
@@ -737,7 +634,7 @@ class PlaywrightSymbolGameSolver:
         while self.state['monitoring_active']:
             try:
                 if self.state['is_running']:
-                    await self.send_credit_report_async()
+                    await self.send_credit_report()
                 
                 for _ in range(CONFIG['credit_check_interval']):
                     if not self.state['monitoring_active']:
@@ -751,8 +648,8 @@ class PlaywrightSymbolGameSolver:
         self.logger.info("Credit monitoring stopped")
 
     # ==================== MAIN SOLVER LOOP ====================
-    async def solver_loop_async(self):
-        """Main solving loop with memory cleanup"""
+    async def solver_loop(self):
+        """Main solving loop"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
@@ -763,8 +660,8 @@ class PlaywrightSymbolGameSolver:
                 return
         
         # Initial navigation
-        await self.page.goto("https://adsha.re/surf", wait_until="networkidle")
-        if not await self.ensure_correct_page_async():
+        await self.page.goto("https://adsha.re/surf")
+        if not await self.ensure_correct_page():
             self.logger.info("Initial navigation issues, continuing...")
         
         consecutive_fails = 0
@@ -780,7 +677,7 @@ class PlaywrightSymbolGameSolver:
                 
                 # Refresh every 15 minutes
                 if cycle_count % 30 == 0 and cycle_count > 0:
-                    await self.page.reload(wait_until="networkidle")
+                    await self.page.reload()
                     self.logger.info("Page refreshed")
                     await asyncio.sleep(5)
                 
@@ -790,7 +687,7 @@ class PlaywrightSymbolGameSolver:
                     self.logger.info("Memory cleanup performed")
                 
                 # Solve game
-                game_solved = await self.solve_symbol_game_async()
+                game_solved = await self.solve_symbol_game()
                 
                 if game_solved:
                     consecutive_fails = 0
@@ -824,7 +721,7 @@ class PlaywrightSymbolGameSolver:
         def run_async():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.solver_loop_async())
+            loop.run_until_complete(self.solver_loop())
         
         self.solver_thread = threading.Thread(target=run_async)
         self.solver_thread.daemon = True
@@ -834,14 +731,14 @@ class PlaywrightSymbolGameSolver:
             def run_monitoring():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.monitoring_loop_async())
+                loop.run_until_complete(self.monitoring_loop())
             
             self.monitoring_thread = threading.Thread(target=run_monitoring)
             self.monitoring_thread.daemon = True
             self.monitoring_thread.start()
         
-        self.logger.info("Solver started with Playwright Firefox!")
-        self.send_telegram("🚀 <b>Solver Started with Playwright Firefox!</b>")
+        self.logger.info("Solver started with Playwright!")
+        self.send_telegram("🚀 <b>Solver Started with Playwright!</b>")
         return "✅ Solver started successfully!"
 
     def stop(self):
@@ -851,7 +748,7 @@ class PlaywrightSymbolGameSolver:
         self.state['status'] = 'stopped'
         
         if self.is_browser_alive():
-            self.save_cookies()
+            asyncio.run(self.save_cookies())
         
         if self.browser:
             try:
@@ -881,7 +778,7 @@ class PlaywrightSymbolGameSolver:
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
         """
 
-# Telegram Bot
+# Telegram Bot (UNCHANGED)
 class TelegramBot:
     def __init__(self):
         self.solver = PlaywrightSymbolGameSolver()
@@ -931,14 +828,14 @@ class TelegramBot:
             response = self.solver.status()
         elif text.startswith('/credits'):
             async def get_credits():
-                return await self.solver.extract_credits_async()
+                return await self.solver.extract_credits()
             credits = asyncio.run(get_credits())
             response = f"💰 <b>Credits:</b> {credits}"
         elif text.startswith('/screenshot'):
             response = self.solver.send_screenshot()
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare Solver Commands - Playwright Firefox</b>
+🤖 <b>AdShare Solver Commands</b>
 
 /start - Start solver
 /stop - Stop solver  
@@ -947,11 +844,10 @@ class TelegramBot:
 /screenshot - Get screenshot
 /help - Show help
 
-💡 <b>ULTRA MEMORY OPTIMIZED</b>
-🎯 Target: 200-300MB RAM
-🦊 Firefox with uBlock
-🚀 Single process mode
-💾 Aggressive memory limits
+💡 <b>Playwright Version</b>
+🚀 Direct conversion from Selenium
+🦊 Using Firefox
+💾 Memory optimized
             """
         
         if response:
@@ -959,5 +855,5 @@ class TelegramBot:
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare Solver with Playwright Firefox started!")
+    bot.logger.info("AdShare Solver with Playwright started!")
     bot.handle_updates()
