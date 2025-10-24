@@ -104,20 +104,41 @@ class CreditGoalSolver:
         try:
             os.makedirs(CONFIG['backup_dir'], exist_ok=True)
             backup_path = os.path.join(CONFIG['backup_dir'], file_name)
-            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getFile?file_id={file_id}"
-            response = requests.get(url, timeout=10)
+            
+            # First, get the file path using getFile method
+            url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getFile"
+            params = {'file_id': file_id}
+            response = requests.get(url, params=params, timeout=10)
+            
             if response.status_code != 200:
-                return f"❌ Failed to get file info: {response.status_code}"
-            file_info = response.json()['result']
-            file_path = file_info['file_path']
+                self.logger.error(f"Failed to get file info: {response.status_code} - {response.text}")
+                return f"❌ Failed to get file info: {response.status_code} - {response.text}"
+            
+            file_info = response.json()
+            if not file_info.get('ok'):
+                self.logger.error(f"Telegram API error: {file_info}")
+                return f"❌ Telegram API error: {file_info.get('description', 'Unknown error')}"
+            
+            file_path = file_info['result']['file_path']
+            self.logger.info(f"File path received: {file_path}")
+            
+            # Download the file
             download_url = f"https://api.telegram.org/file/bot{CONFIG['telegram_token']}/{file_path}"
-            with requests.get(download_url, stream=True, timeout=30) as r:
-                r.raise_for_status()
-                with open(backup_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
+            download_response = requests.get(download_url, stream=True, timeout=60)
+            download_response.raise_for_status()
+            
+            with open(backup_path, 'wb') as f:
+                for chunk in download_response.iter_content(chunk_size=8192):
+                    if chunk:
                         f.write(chunk)
-            self.logger.info(f"Backup downloaded: {backup_path}")
-            return backup_path
+            
+            # Verify the file was downloaded
+            if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
+                self.logger.info(f"Backup downloaded successfully: {backup_path} ({os.path.getsize(backup_path)} bytes)")
+                return backup_path
+            else:
+                return "❌ Backup file download failed - file is empty or doesn't exist"
+                
         except Exception as e:
             self.logger.error(f"Backup download failed: {e}")
             return f"❌ Backup download failed: {str(e)}"
@@ -125,16 +146,54 @@ class CreditGoalSolver:
     def restore_backup(self, backup_path):
         """Restore Firefox profile from backup"""
         try:
-            profile_dir = os.path.dirname(CONFIG['firefox_profile'])
+            # Check if backup file exists and is valid
+            if not os.path.exists(backup_path):
+                return f"❌ Backup file not found: {backup_path}"
+            
+            if os.path.getsize(backup_path) == 0:
+                return "❌ Backup file is empty"
+            
+            # Create profile directory if it doesn't exist
+            profile_dir = CONFIG['firefox_profile']
             os.makedirs(profile_dir, exist_ok=True)
-            cmd = f"tar -xzf {backup_path} -C {profile_dir}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            self.logger.info(f"Restoring backup from {backup_path} to {profile_dir}")
+            
+            # First, clean the profile directory
+            self.logger.info("Cleaning existing profile directory...")
+            for item in os.listdir(profile_dir):
+                item_path = os.path.join(profile_dir, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        import shutil
+                        shutil.rmtree(item_path)
+                except Exception as e:
+                    self.logger.warning(f"Could not remove {item_path}: {e}")
+            
+            # Extract the backup
+            cmd = f"tar -xzf {backup_path} -C {profile_dir} --strip-components=1"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+            
             if result.returncode == 0:
-                self.logger.info(f"Backup restored: {backup_path}")
-                return f"✅ Backup restored successfully from {backup_path}"
+                self.logger.info(f"Backup restored successfully from {backup_path}")
+                
+                # Verify extraction
+                if os.listdir(profile_dir):
+                    # Restart browser to use new profile
+                    if self.state['is_running']:
+                        asyncio.create_task(self.restart_browser())
+                    
+                    return f"✅ Backup restored successfully! Profile extracted to {profile_dir}"
+                else:
+                    return "❌ Backup extraction failed - profile directory is empty"
             else:
                 self.logger.error(f"Backup restoration failed: {result.stderr}")
                 return f"❌ Backup restoration failed: {result.stderr}"
+                
+        except subprocess.TimeoutExpired:
+            return "❌ Backup restoration timed out"
         except Exception as e:
             self.logger.error(f"Backup restoration error: {e}")
             return f"❌ Backup restoration error: {str(e)}"
@@ -478,11 +537,11 @@ class CreditGoalSolver:
                 return True
             self.logger.error("❌ LOGIN FAILED - Still on login page")
             return False
-        except Exception as e:  # ADDED THIS EXCEPT BLOCK
+        except Exception as e:
             self.logger.error(f"Login process failed: {e}")
             return False
 
-    async def save_cookies(self):  # This should be line 481
+    async def save_cookies(self):
         try:
             if self.page and self.state['is_logged_in']:
                 cookies = await self.context.cookies()
@@ -893,6 +952,8 @@ class TelegramBot:
 /help - Show help
 💡 Send a .tar.gz backup file to restore profile
                 """
+            elif text.startswith('/progress'):
+                response = self.solver.get_progress_status()
         
         if response:
             self.solver.send_telegram(response)
