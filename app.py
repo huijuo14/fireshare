@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - ULTIMATE HYBRID EDITION
-Complete features with working login + enhanced recovery + all optimizations
+AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
+Fixed version with 4-failure threshold and removed detailed command
 """
 
 import os
@@ -507,10 +507,19 @@ class UltimateSymbolSolver:
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
     def find_best_match(self, question_svg, links):
-        """Enhanced best match finding"""
+        """Enhanced best match finding with fresh elements"""
         best_match = None
         highest_confidence = 0
         exact_matches = []
+        
+        # Always get fresh elements to avoid stale references
+        try:
+            question_svg = WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.TAG_NAME, "svg"))
+            )
+            links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']")
+        except:
+            return None
         
         for link in links:
             try:
@@ -553,10 +562,11 @@ class UltimateSymbolSolver:
             return False
             
         try:
-            # Enhanced page verification
-            if not self.ensure_correct_page():
-                self.logger.error("Cannot ensure correct page status")
-                return False
+            # Enhanced page verification - only check if we have multiple failures
+            if self.state['consecutive_fails'] >= 4:
+                if not self.ensure_correct_page():
+                    self.logger.error("Cannot ensure correct page status")
+                    return False
             
             # Enhanced game detection with multiple strategies
             try:
@@ -587,6 +597,9 @@ class UltimateSymbolSolver:
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
                     confidence = best_match['confidence']
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
+                    
+                    # Wait 30 seconds for normal redirect cycle
+                    time.sleep(30)
                     return True
             else:
                 self.logger.info("No good match found")
@@ -643,7 +656,7 @@ class UltimateSymbolSolver:
 
     # ==================== ENHANCED LEADERBOARD COMPETITION ====================
     def parse_leaderboard(self):
-        """Enhanced leaderboard parsing"""
+        """Enhanced leaderboard parsing with multiple strategies"""
         try:
             if not self.is_browser_alive():
                 return None
@@ -657,30 +670,40 @@ class UltimateSymbolSolver:
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             leaderboard = []
             
+            # Multiple selector strategies for leaderboard
             user_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x)
             
+            # Alternative strategy if first fails
+            if not user_divs:
+                user_divs = soup.find_all('div', class_=True)
+                user_divs = [div for div in user_divs if '#' in div.get_text()]
+            
             for i, div in enumerate(user_divs[:10]):
-                text = div.get_text()
-                
-                # Enhanced user ID extraction
-                user_match = re.search(r'#(\d+)', text)
-                user_id = int(user_match.group(1)) if user_match else None
-                
-                # Enhanced total surfed extraction
-                surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
-                total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
-                
-                # Enhanced today's credits extraction
-                today_match = re.search(r'T:\s*(\d+)', text)
-                today_credits = int(today_match.group(1)) if today_match else 0
-                
-                leaderboard.append({
-                    'rank': i + 1,
-                    'user_id': user_id,
-                    'total_surfed': total_surfed,
-                    'today_credits': today_credits,
-                    'is_me': user_id == 4242  # Your user ID
-                })
+                try:
+                    text = div.get_text()
+                    
+                    # Enhanced user ID extraction
+                    user_match = re.search(r'#(\d+)', text)
+                    user_id = int(user_match.group(1)) if user_match else None
+                    
+                    # Enhanced total surfed extraction
+                    surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
+                    total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
+                    
+                    # Enhanced today's credits extraction
+                    today_match = re.search(r'T:\s*(\d+)', text)
+                    today_credits = int(today_match.group(1)) if today_match else 0
+                    
+                    leaderboard.append({
+                        'rank': i + 1,
+                        'user_id': user_id,
+                        'total_surfed': total_surfed,
+                        'today_credits': today_credits,
+                        'is_me': user_id == 4242  # Your user ID
+                    })
+                except Exception as e:
+                    self.logger.warning(f"Error parsing leaderboard entry: {e}")
+                    continue
             
             self.driver.close()
             self.driver.switch_to.window(original_window)
@@ -689,7 +712,8 @@ class UltimateSymbolSolver:
             self.state['leaderboard'] = leaderboard
             self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
             
-            self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']}")
+            if leaderboard:
+                self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']}")
             return leaderboard
             
         except Exception as e:
@@ -834,9 +858,9 @@ class UltimateSymbolSolver:
 
     # ==================== ULTIMATE ERROR HANDLING ====================
     def handle_consecutive_failures(self):
-        """ULTIMATE progressive failure handling"""
+        """ULTIMATE progressive failure handling - 4 FAILURES BEFORE REDIRECT"""
         self.state['consecutive_fails'] += 1
-        current_fails = self.state['consecutive_failures']
+        current_fails = self.state['consecutive_fails']  # FIXED VARIABLE NAME
         
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         
@@ -846,10 +870,10 @@ class UltimateSymbolSolver:
             self.restart_browser()
             return
         
-        # Progressive recovery system
-        if current_fails >= CONFIG['refresh_page_after_failures']:
-            self.logger.info("Refreshing page...")
-            self.send_telegram(f"🔄 Refreshing page - {current_fails} consecutive failures")
+        # Progressive recovery system - WAIT FOR 4 FAILURES BEFORE REDIRECT
+        if current_fails >= 4:  # CHANGED: Wait for 4 failures before redirect
+            self.logger.info("4 consecutive failures - redirecting to surf...")
+            self.send_telegram(f"🔄 4 consecutive failures - redirecting to surf...")
             
             try:
                 self.driver.get("https://adsha.re/surf")
@@ -924,10 +948,10 @@ class UltimateSymbolSolver:
                 
                 if game_solved:
                     self.state['consecutive_fails'] = 0
-                    time.sleep(11)  # Wait for next game
+                    # Already waited 30 seconds in solve_symbol_game
                 else:
                     self.handle_consecutive_failures()
-                    time.sleep(7)
+                    time.sleep(5)
                 
                 cycle_count += 1
                     
@@ -991,31 +1015,6 @@ class UltimateSymbolSolver:
         
         return self.get_competitive_status()
 
-    def get_detailed_status(self):
-        """Get ultra-detailed status for debugging"""
-        status = self.status()
-        
-        # Add browser info
-        browser_status = "✅ Alive" if self.is_browser_alive() else "❌ Dead"
-        detailed_status = f"""
-🔧 <b>DETAILED SYSTEM STATUS</b>
-{browser_status}
-🖥️ Driver: {'✅ Present' if self.driver else '❌ None'}
-🧠 Memory Usage: {self.get_memory_usage()} MB
-🔄 Threads: {threading.active_count()} active
-        """
-        
-        return status + detailed_status
-
-    def get_memory_usage(self):
-        """Get memory usage for status"""
-        try:
-            import psutil
-            process = psutil.Process()
-            return f"{process.memory_info().rss / 1024 / 1024:.1f}"
-        except:
-            return "N/A"
-
 # ==================== ULTIMATE TELEGRAM BOT ====================
 class UltimateTelegramBot:
     def __init__(self):
@@ -1041,7 +1040,7 @@ class UltimateTelegramBot:
             return []
     
     def process_message(self, update):
-        """Enhanced message processing"""
+        """Enhanced message processing - REMOVED /detailed COMMAND"""
         if 'message' not in update:
             return
         
@@ -1059,8 +1058,6 @@ class UltimateTelegramBot:
             response = self.solver.stop()
         elif text.startswith('/status'):
             response = self.solver.status()
-        elif text.startswith('/detailed'):
-            response = self.solver.get_detailed_status()
         elif text.startswith('/screenshot'):
             response = self.solver.send_screenshot()
         elif text.startswith('/target'):
@@ -1104,7 +1101,6 @@ class UltimateTelegramBot:
 /start - Start solver
 /stop - Stop solver  
 /status - Competitive status
-/detailed - Detailed system status
 /screenshot - Get screenshot
 /login - Force login
 /restart - Restart browser
