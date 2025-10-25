@@ -30,12 +30,12 @@ CONFIG = {
     'password': "@Sd2007123",
     'base_delay': 2,
     'random_delay': True,
-    'min_delay': 1,
-    'max_delay': 3,
+    'min_delay': 0.7,
+    'max_delay': 2.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
-    'refresh_page_after_failures': 5,
-    'browser_restart_after_failures': 8,
+    'refresh_page_after_failures': 7,
+    'browser_restart_after_failures': 10,
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
@@ -599,7 +599,7 @@ class UltimateSymbolSolver:
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
                     
                     # Wait 10 seconds for normal redirect cycle
-                    time.sleep(10)
+                    time.sleep(14)
                     return True
             else:
                 self.logger.info("No good match found")
