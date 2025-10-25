@@ -598,9 +598,17 @@ class UltimateSymbolSolver:
                     confidence = best_match['confidence']
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
                     
-                    # Wait 10 seconds for normal redirect cycle
-                    time.sleep(14)
-                    return True
+                    # Wait for elements to reappear (max 16 seconds)
+                    try:
+                        WebDriverWait(self.driver, 16).until(
+                            EC.presence_of_element_located((By.TAG_NAME, "svg"))
+                        )
+                        # Elements found! smart_delay will add 1-3s before next click
+                        return True
+                    except TimeoutException:
+                        self.logger.info("Elements didn't appear within 16 seconds")
+                        return False
+                return True
             else:
                 self.logger.info("No good match found")
                 return False
@@ -860,7 +868,7 @@ class UltimateSymbolSolver:
     def handle_consecutive_failures(self):
         """ULTIMATE progressive failure handling - 4 FAILURES BEFORE REDIRECT"""
         self.state['consecutive_fails'] += 1
-        current_fails = self.state['consecutive_fails']  # FIXED VARIABLE NAME
+        current_fails = self.state['consecutive_fails']
         
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         
