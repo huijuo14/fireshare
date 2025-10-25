@@ -598,8 +598,8 @@ class UltimateSymbolSolver:
                     confidence = best_match['confidence']
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
                     
-                    # Wait 30 seconds for normal redirect cycle
-                    time.sleep(30)
+                    # Wait 10 seconds for normal redirect cycle
+                    time.sleep(10)
                     return True
             else:
                 self.logger.info("No good match found")
