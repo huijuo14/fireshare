@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies including Firefox and geckodriver
+# Install system dependencies including Firefox
 RUN apt-get update && apt-get install -y \
     firefox-esr \
     wget \
@@ -23,10 +23,6 @@ COPY . /app
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright and browsers
-RUN playwright install
-RUN playwright install-deps
 
 # Run the application
 CMD ["python", "app.py"]
