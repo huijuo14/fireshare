@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - Firefox Edition
-MEMORY OPTIMIZED VERSION with Complete Error Handling
+AdShare Symbol Game Solver - Competitive Edition
+Complete features with leaderboard competition
 """
 
 import os
@@ -11,17 +11,17 @@ import logging
 import re
 import requests
 import threading
-import base64
 import json
-import subprocess
 import gc
+import pytz
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
 
 # ==================== CONFIGURATION ====================
@@ -33,40 +33,38 @@ CONFIG = {
     'min_delay': 1,
     'max_delay': 3,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
-    'credit_check_interval': 1800,
     'max_consecutive_failures': 15,
     'refresh_page_after_failures': 5,
-    'send_screenshot_on_error': True,
-    'screenshot_cooldown_minutes': 1,
-    'cookies_wait_timeout': 222,  # 5 minutes
+    'cookies_wait_timeout': 300,
+    'leaderboard_check_interval': 1800,  # 30 minutes
+    'safety_margin': 100,  # +100 credits above #1
 }
 
-class FirefoxSymbolGameSolver:
+class CompetitiveSymbolSolver:
     def __init__(self):
         self.driver = None
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         self.waiting_for_cookies = False
         
-        # State Management
+        # Enhanced State Management
         self.state = {
             'is_running': False,
             'total_solved': 0,
             'status': 'stopped',
-            'last_credits': 'Unknown',
-            'monitoring_active': False,
             'is_logged_in': False,
             'consecutive_fails': 0,
             'last_error_screenshot': 0,
             'daily_target': None,
-            'today_start_count': 0,
-            'reset_processed': False,
+            'auto_compete': True,
+            'safety_margin': CONFIG['safety_margin'],
+            'leaderboard': [],
+            'my_position': None,
             'last_leaderboard_check': 0,
         }
         
         self.solver_thread = None
         self.monitoring_thread = None
-        self.leaderboard_thread = None
         self.setup_logging()
         self.setup_telegram()
     
@@ -90,7 +88,7 @@ class FirefoxSymbolGameSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>AdShare Solver Started with Complete Error Handling!</b>")
+                    self.send_telegram("🤖 <b>Competitive AdShare Solver Started!</b>")
                     return True
             return False
         except Exception as e:
@@ -98,7 +96,7 @@ class FirefoxSymbolGameSolver:
             return False
     
     def send_telegram(self, text, parse_mode='HTML'):
-        """Send message to Telegram with error handling"""
+        """Send message to Telegram"""
         if not self.telegram_chat_id:
             return False
         
@@ -116,7 +114,7 @@ class FirefoxSymbolGameSolver:
             return False
 
     def send_screenshot(self, caption="🖥️ Screenshot"):
-        """Send screenshot to Telegram with error handling"""
+        """Send screenshot to Telegram"""
         if not self.driver or not self.telegram_chat_id:
             return "❌ Browser not running or Telegram not configured"
         
@@ -130,18 +128,22 @@ class FirefoxSymbolGameSolver:
                 files = {'photo': photo}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': f'{caption} - {time.strftime("%H:%M:%S")}'
+                    'caption': f'{caption} - {self.get_ist_time()}'
                 }
-                
                 response = requests.post(url, files=files, data=data, timeout=30)
             
             if os.path.exists(screenshot_path):
                 os.remove(screenshot_path)
                 
-            return "✅ Screenshot sent!" if response.status_code == 200 else f"❌ Failed: {response.status_code}"
+            return "✅ Screenshot sent!" if response.status_code == 200 else "❌ Failed to send screenshot"
                 
         except Exception as e:
             return f"❌ Screenshot error: {str(e)}"
+
+    def get_ist_time(self):
+        """Get current IST time"""
+        ist = pytz.timezone('Asia/Kolkata')
+        return datetime.now(ist).strftime('%I:%M %p IST')
 
     def send_cookies_to_telegram(self):
         """Send cookies as file to Telegram"""
@@ -150,48 +152,41 @@ class FirefoxSymbolGameSolver:
                 return False
             
             cookies = self.driver.get_cookies()
-            
-            # Save cookies to file
             with open(self.cookies_file, 'w') as f:
                 json.dump(cookies, f)
             
-            # Send file to Telegram
             url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendDocument"
             
             with open(self.cookies_file, 'rb') as document:
                 files = {'document': document}
                 data = {
                     'chat_id': self.telegram_chat_id,
-                    'caption': '🔐 Fresh Cookies Generated - Save this file for later use'
+                    'caption': '🔐 Fresh Cookies Generated - Save for later use'
                 }
-                
                 response = requests.post(url, files=files, data=data, timeout=30)
             
             if response.status_code == 200:
                 self.logger.info("Cookies sent to Telegram")
                 return True
-            else:
-                self.logger.error("Failed to send cookies to Telegram")
-                return False
+            return False
                 
         except Exception as e:
             self.logger.error(f"Error sending cookies: {e}")
             return False
 
-    # ==================== BROWSER HEALTH CHECK ====================
+    # ==================== BROWSER MANAGEMENT ====================
     def is_browser_alive(self):
-        """Quick browser health check"""
+        """Check if browser is alive"""
         try:
             if not self.driver:
                 return False
             self.driver.title
             return True
-        except Exception as e:
-            self.logger.error(f"Browser health check failed: {e}")
+        except Exception:
             return False
 
     def restart_browser(self):
-        """Restart browser with error handling"""
+        """Restart browser"""
         try:
             if self.driver:
                 self.driver.quit()
@@ -199,6 +194,43 @@ class FirefoxSymbolGameSolver:
             return self.setup_firefox()
         except Exception as e:
             self.logger.error(f"Browser restart failed: {e}")
+            return False
+
+    def setup_firefox(self):
+        """Setup Firefox with memory optimization"""
+        try:
+            options = Options()
+            options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            
+            # Memory optimization
+            options.set_preference("dom.ipc.processCount", 1)
+            options.set_preference("content.processLimit", 1)
+            options.set_preference("browser.cache.disk.enable", False)
+            options.set_preference("browser.cache.memory.enable", False)
+            options.set_preference("javascript.options.mem.max", 25600)
+            options.set_preference("browser.sessionhistory.max_entries", 1)
+            options.set_preference("image.mem.max_decoded_image_kb", 512)
+            options.set_preference("media.memory_cache_max_size", 1024)
+            options.set_preference("permissions.default.image", 1)  # ALLOW IMAGES
+            options.set_preference("gfx.webrender.all", True)
+            options.set_preference("network.http.max-connections", 10)
+            
+            service = Service('/usr/local/bin/geckodriver')
+            self.driver = webdriver.Firefox(service=service, options=options)
+            
+            # Install uBlock Origin
+            ublock_path = '/app/ublock.xpi'
+            if os.path.exists(ublock_path):
+                self.driver.install_addon(ublock_path, temporary=False)
+                self.logger.info("uBlock Origin installed")
+            
+            self.logger.info("Firefox started successfully!")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Firefox setup failed: {e}")
             return False
 
     # ==================== COOKIES MANAGEMENT ====================
@@ -224,34 +256,25 @@ class FirefoxSymbolGameSolver:
                 for cookie in cookies:
                     try:
                         self.driver.add_cookie(cookie)
-                    except Exception as e:
-                        self.logger.warning(f"Could not add cookie: {e}")
+                    except:
                         continue
                 
                 self.logger.info("Cookies loaded from file")
                 return True
         except Exception as e:
             self.logger.warning(f"Could not load cookies: {e}")
-        
         return False
 
     def handle_cookies_upload(self, file_info):
-        """Process uploaded cookies file from Telegram"""
+        """Process uploaded cookies file"""
         try:
-            self.logger.info("Processing cookies upload...")
-            
-            # Download cookies file from Telegram
-            file_url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getFile"
             file_path = file_info['file_path']
-            
             download_url = f"https://api.telegram.org/file/bot{CONFIG['telegram_token']}/{file_path}"
             response = requests.get(download_url)
             
-            # Save cookies file
             with open(self.cookies_file, 'wb') as f:
                 f.write(response.content)
             
-            # Load cookies to browser
             if self.load_cookies():
                 self.send_telegram("✅ Cookies loaded successfully!")
                 self.state['is_logged_in'] = True
@@ -282,7 +305,6 @@ Please choose:
         
         while time.time() - start_time < CONFIG['cookies_wait_timeout']:
             try:
-                # Check for Telegram updates
                 url = f"https://api.telegram.org/bot{CONFIG['telegram_token']}/getUpdates"
                 response = requests.get(url, timeout=10)
                 
@@ -309,14 +331,12 @@ Please choose:
                 
                 if user_responded:
                     break
-                    
-                time.sleep(10)  # Check every 10 seconds
+                time.sleep(10)
                 
             except Exception as e:
                 self.logger.error(f"Error checking user response: {e}")
                 time.sleep(10)
         
-        # Auto login if no response after timeout
         if not user_responded:
             self.logger.info("No user response - auto logging in")
             self.send_telegram("⏰ No response received - Auto logging in...")
@@ -324,7 +344,7 @@ Please choose:
 
     # ==================== PAGE STATE DETECTION ====================
     def detect_page_state(self):
-        """Detect current page state with error handling"""
+        """Detect current page state"""
         try:
             if not self.is_browser_alive():
                 return "BROWSER_DEAD"
@@ -340,10 +360,6 @@ Please choose:
                 return "WRONG_PAGE"
             elif "404" in page_source or "not found" in page_source:
                 return "PAGE_NOT_FOUND"
-            elif "error" in page_source or "500" in page_source:
-                return "SERVER_ERROR"
-            elif len(page_source) < 100:
-                return "EMPTY_PAGE"
             else:
                 return "UNKNOWN_PAGE"
                 
@@ -352,7 +368,7 @@ Please choose:
             return "DETECTION_ERROR"
 
     def ensure_correct_page(self):
-        """Ensure we're on the correct surf page with comprehensive error handling"""
+        """Ensure we're on the correct surf page"""
         if not self.is_browser_alive():
             self.logger.error("Browser dead during page check")
             return False
@@ -361,19 +377,15 @@ Please choose:
             page_state = self.detect_page_state()
             
             if page_state == "BROWSER_DEAD":
-                self.logger.error("Browser is dead - cannot ensure correct page")
                 return False
-                
             elif page_state == "LOGIN_REQUIRED":
                 self.logger.info("Login page detected - handling login...")
                 if not self.state['is_logged_in']:
                     self.handle_login_page()
                 return self.state['is_logged_in']
-                
             elif page_state == "GAME_ACTIVE":
                 return True
-                
-            elif page_state in ["WRONG_PAGE", "PAGE_NOT_FOUND", "SERVER_ERROR", "EMPTY_PAGE", "UNKNOWN_PAGE", "DETECTION_ERROR"]:
+            else:
                 self.logger.info(f"Wrong page state: {page_state} - redirecting to surf...")
                 self.driver.get("https://adsha.re/surf")
                 WebDriverWait(self.driver, 15).until(
@@ -381,11 +393,6 @@ Please choose:
                 )
                 self.smart_delay()
                 return self.ensure_correct_page()
-                
-            else:
-                self.logger.warning(f"Unknown page state: {page_state}")
-                self.driver.get("https://adsha.re/surf")
-                return True
                 
         except Exception as e:
             self.logger.error(f"Page correction error: {e}")
@@ -517,7 +524,7 @@ Please choose:
                 self.logger.info("Login successful!")
                 self.state['is_logged_in'] = True
                 self.save_cookies()
-                self.send_cookies_to_telegram()  # Send fresh cookies
+                self.send_cookies_to_telegram()
                 self.send_telegram("✅ <b>Login Successful!</b>")
                 return True
             else:
@@ -533,53 +540,12 @@ Please choose:
             self.logger.error(f"Login error: {e}")
             return False
 
-    # ==================== MEMORY OPTIMIZED FIREFOX SETUP ====================
-    def setup_firefox(self):
-        """Setup Firefox with memory optimization"""
-        self.logger.info("Starting Firefox with memory optimization...")
-        
-        try:
-            options = Options()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            
-            # Memory optimization flags
-            options.set_preference("dom.ipc.processCount", 1)
-            options.set_preference("content.processLimit", 1)
-            options.set_preference("browser.cache.disk.enable", False)
-            options.set_preference("browser.cache.memory.enable", False)
-            options.set_preference("javascript.options.mem.max", 25600)
-            options.set_preference("browser.sessionhistory.max_entries", 1)
-            options.set_preference("image.mem.max_decoded_image_kb", 512)
-            options.set_preference("media.memory_cache_max_size", 1024)
-            options.set_preference("permissions.default.image", 2)
-            options.set_preference("gfx.webrender.all", True)
-            options.set_preference("network.http.max-connections", 10)
-            
-            service = Service('/usr/local/bin/geckodriver')
-            self.driver = webdriver.Firefox(service=service, options=options)
-            
-            # Install uBlock Origin
-            ublock_path = '/app/ublock.xpi'
-            if os.path.exists(ublock_path):
-                self.driver.install_addon(ublock_path, temporary=False)
-                self.logger.info("uBlock Origin installed")
-            
-            self.logger.info("Firefox started with memory optimization!")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Firefox setup failed: {e}")
-            return False
-
     def smart_delay(self):
         """Randomized delay between actions"""
         if CONFIG['random_delay']:
             delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
         else:
             delay = CONFIG['base_delay']
-        
         time.sleep(delay)
         return delay
 
@@ -673,7 +639,7 @@ Please choose:
         return None
 
     def solve_symbol_game(self):
-        """Main game solving logic with comprehensive error handling"""
+        """Main game solving logic"""
         if not self.state['is_running']:
             return False
         
@@ -721,102 +687,22 @@ Please choose:
             self.handle_consecutive_failures()
             return False
 
-    # ==================== ERROR HANDLING ====================
-    def handle_consecutive_failures(self):
-        """Handle consecutive failures with comprehensive error handling"""
-        self.state['consecutive_fails'] += 1
-        current_fails = self.state['consecutive_fails']
-        
-        self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
-        
-        if not self.is_browser_alive():
-            self.logger.error("Browser dead during failure handling")
-            if current_fails >= 3:
-                self.restart_browser()
-            return
-        
-        # Screenshot on first failure
-        if current_fails == 1 and CONFIG['send_screenshot_on_error']:
-            cooldown_passed = time.time() - self.state['last_error_screenshot'] > CONFIG['screenshot_cooldown_minutes'] * 60
-            if cooldown_passed:
-                self.logger.info("Sending error screenshot...")
-                screenshot_result = self.send_screenshot("❌ Game Error - No game solved")
-                self.send_telegram(f"⚠️ <b>Game Error</b>\nFails: {current_fails}/{CONFIG['max_consecutive_failures']}\n{screenshot_result}")
-                self.state['last_error_screenshot'] = time.time()
-        
-        # Refresh page after configured failures
-        elif current_fails >= CONFIG['refresh_page_after_failures']:
-            self.logger.info("Too many failures! Refreshing page...")
-            self.send_telegram(f"🔄 <b>Refreshing page</b> - {current_fails} failures")
-            
-            try:
-                self.driver.get("https://adsha.re/surf")
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                self.smart_delay()
-                self.logger.info("Page refreshed")
-                self.state['consecutive_fails'] = 0
-            except Exception as e:
-                self.logger.error(f"Page refresh failed: {e}")
-        
-        # Restart browser after more failures
-        elif current_fails >= 8:
-            self.logger.warning("Multiple failures - restarting browser...")
-            self.send_telegram(f"🔄 <b>Restarting browser</b> - {current_fails} failures")
-            self.restart_browser()
-            self.state['consecutive_fails'] = 0
-        
-        # Stop at max failures
-        elif current_fails >= CONFIG['max_consecutive_failures']:
-            self.logger.error("Too many failures! Stopping...")
-            self.send_telegram("🚨 <b>CRITICAL ERROR</b>\nToo many failures - Stopping")
-            self.stop()
-
-    # ==================== TARGET MANAGEMENT ====================
-    def set_daily_target(self, target):
-        """Set daily target"""
-        try:
-            self.state['daily_target'] = int(target)
-            self.send_telegram(f"🎯 Daily target set to {target} sites")
-            return True
-        except:
-            return False
-
-    def clear_daily_target(self):
-        """Clear daily target"""
-        self.state['daily_target'] = None
-        self.send_telegram("🎯 Daily target cleared - Focusing on #1 position")
-        return True
-
-    def get_daily_progress(self):
-        """Get daily progress"""
-        # This would need actual implementation to get current surfed count
-        # For now, returning placeholder
-        return f"🎯 Daily: {self.state['total_solved']}/{self.state['daily_target']}"
-
-    # ==================== LEADERBOARD PARSING ====================
+    # ==================== LEADERBOARD COMPETITION ====================
     def parse_leaderboard(self):
         """Parse top 10 leaderboard"""
         try:
             if not self.is_browser_alive():
                 return None
             
-            # Save current window
             original_window = self.driver.current_window_handle
-            
-            # Open leaderboard in new tab
             self.driver.execute_script("window.open('https://adsha.re/ten', '_blank')")
             self.driver.switch_to.window(self.driver.window_handles[-1])
             
-            # Wait for page load
             time.sleep(3)
             
-            # Parse HTML
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             leaderboard = []
             
-            # Find all user entries
             user_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x)
             
             for i, div in enumerate(user_divs[:10]):  # Top 10 only
@@ -830,28 +716,31 @@ Please choose:
                 surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
                 total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
                 
-                # Extract prize
-                prize_match = re.search(r'-\s*([\d,]+)\s*Visitors', text)
-                prize = prize_match.group(1) + ' Visitors' if prize_match else 'No Prize'
+                # Extract today's credits (from T: X / Y: X / DB: X)
+                today_match = re.search(r'T:\s*(\d+)', text)
+                today_credits = int(today_match.group(1)) if today_match else 0
                 
                 leaderboard.append({
                     'rank': i + 1,
                     'user_id': user_id,
                     'total_surfed': total_surfed,
-                    'prize': prize,
+                    'today_credits': today_credits,
                     'is_me': user_id == 4242  # Your ID
                 })
             
-            # Close tab and return to original window
             self.driver.close()
             self.driver.switch_to.window(original_window)
             
             self.state['last_leaderboard_check'] = time.time()
+            self.state['leaderboard'] = leaderboard
+            
+            # Find my position
+            self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
+            
             return leaderboard
             
         except Exception as e:
             self.logger.error(f"Leaderboard parsing error: {e}")
-            # Ensure we return to original window
             try:
                 if len(self.driver.window_handles) > 1:
                     self.driver.close()
@@ -860,37 +749,162 @@ Please choose:
                 pass
             return None
 
+    def get_competitive_target(self):
+        """Calculate competitive target"""
+        if not self.state['leaderboard']:
+            return None
+        
+        leader = self.state['leaderboard'][0]
+        my_pos = self.state['my_position']
+        
+        if my_pos and my_pos['rank'] > 1:
+            target = leader['today_credits'] + self.state['safety_margin']
+            return target
+        elif my_pos and my_pos['rank'] == 1:
+            # Stay #1 with safety margin over #2
+            if len(self.state['leaderboard']) > 1:
+                second_place = self.state['leaderboard'][1]['today_credits']
+                target = second_place + self.state['safety_margin']
+                return target
+        
+        return None
+
+    def get_competitive_status(self):
+        """Get competitive status display"""
+        status_text = f"""
+📊 <b>COMPETITIVE STATUS</b>
+⏰ {self.get_ist_time()}
+🔄 Status: {self.state['status']}
+🎮 Games Solved: {self.state['total_solved']}
+🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
+⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+"""
+        
+        # Add competition info
+        if self.state['auto_compete'] and self.state['leaderboard']:
+            target = self.get_competitive_target()
+            my_pos = self.state['my_position']
+            
+            if my_pos and target:
+                leader = self.state['leaderboard'][0]
+                gap = target - my_pos['today_credits'] if my_pos['today_credits'] < target else 0
+                
+                status_text += f"""
+🎯 <b>Auto Target:</b> {target} credits (+{self.state['safety_margin']} lead)
+🥇 <b>Current Position:</b> #{my_pos['rank']} ({my_pos['today_credits']} vs #1: {leader['today_credits']})
+📈 <b>To Reach #1:</b> {gap} credits needed
+💎 <b>Earned Today:</b> {my_pos['today_credits']} credits
+"""
+        
+        elif self.state['daily_target']:
+            status_text += f"🎯 <b>Daily Target:</b> {self.state['daily_target']} sites\n"
+        
+        # Add leaderboard preview
+        if self.state['leaderboard']:
+            status_text += f"\n🏆 <b>LEADERBOARD (Top 3):</b>\n"
+            for entry in self.state['leaderboard'][:3]:
+                marker = " 👈 YOU" if entry['is_me'] else ""
+                status_text += f"{entry['rank']}. #{entry['user_id']} - {entry['today_credits']} credits{marker}\n"
+        
+        return status_text
+
     def leaderboard_monitor(self):
         """Background leaderboard monitoring"""
         self.logger.info("Starting leaderboard monitoring...")
         
-        while self.state['monitoring_active']:
+        while self.state['is_running']:
             try:
-                if self.state['is_running']:
+                if self.state['auto_compete']:
                     leaderboard = self.parse_leaderboard()
                     if leaderboard:
-                        # Check if we're not #1 and update target
-                        my_position = next((item for item in leaderboard if item['is_me']), None)
-                        if my_position and my_position['rank'] > 1:
-                            leader = leaderboard[0]
-                            target_sites = leader['total_surfed'] + 100
-                            if not self.state['daily_target'] or target_sites > self.state['daily_target']:
-                                self.state['daily_target'] = target_sites
-                                self.send_telegram(f"🎯 Auto-target set: {target_sites} sites (Overtake #{leader['user_id']})")
+                        target = self.get_competitive_target()
+                        if target and target != self.state.get('last_target'):
+                            self.state['last_target'] = target
+                            self.send_telegram(f"🎯 <b>Auto Target Updated:</b> {target} credits (Beat #{leaderboard[0]['user_id']})")
                 
                 # Check every 30 minutes
-                for _ in range(1800):
-                    if not self.state['monitoring_active']:
+                for _ in range(CONFIG['leaderboard_check_interval']):
+                    if not self.state['is_running']:
                         break
                     time.sleep(1)
                     
             except Exception as e:
                 self.logger.error(f"Leaderboard monitoring error: {e}")
-                time.sleep(300)  # Retry in 5 minutes
+                time.sleep(300)
+
+    # ==================== TARGET MANAGEMENT ====================
+    def set_daily_target(self, target):
+        """Set daily target"""
+        try:
+            self.state['daily_target'] = int(target)
+            self.state['auto_compete'] = False
+            self.send_telegram(f"🎯 Daily target set to {target} sites (Manual mode)")
+            return True
+        except:
+            return False
+
+    def clear_daily_target(self):
+        """Clear daily target"""
+        self.state['daily_target'] = None
+        self.state['auto_compete'] = True
+        self.send_telegram("🎯 Daily target cleared - Auto-compete mode activated")
+        return True
+
+    def set_auto_compete(self, margin=None):
+        """Set auto-compete mode"""
+        if margin:
+            try:
+                self.state['safety_margin'] = int(margin)
+            except:
+                pass
+        
+        self.state['auto_compete'] = True
+        self.state['daily_target'] = None
+        
+        margin_text = f" (+{self.state['safety_margin']} margin)" if margin else ""
+        self.send_telegram(f"🏆 Auto-compete mode activated{margin_text} - Targeting #1 position")
+        return True
+
+    # ==================== ERROR HANDLING ====================
+    def handle_consecutive_failures(self):
+        """Handle consecutive failures"""
+        self.state['consecutive_fails'] += 1
+        current_fails = self.state['consecutive_fails']
+        
+        self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
+        
+        if not self.is_browser_alive():
+            if current_fails >= 3:
+                self.restart_browser()
+            return
+        
+        if current_fails >= CONFIG['refresh_page_after_failures']:
+            self.logger.info("Refreshing page...")
+            self.send_telegram(f"🔄 Refreshing page - {current_fails} failures")
+            
+            try:
+                self.driver.get("https://adsha.re/surf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                self.smart_delay()
+                self.state['consecutive_fails'] = 0
+            except Exception as e:
+                self.logger.error(f"Page refresh failed: {e}")
+        
+        elif current_fails >= 8:
+            self.logger.warning("Restarting browser...")
+            self.restart_browser()
+            self.state['consecutive_fails'] = 0
+        
+        elif current_fails >= CONFIG['max_consecutive_failures']:
+            self.logger.error("Too many failures! Stopping...")
+            self.send_telegram("🚨 CRITICAL ERROR - Too many failures - Stopping")
+            self.stop()
 
     # ==================== MAIN SOLVER LOOP ====================
     def solver_loop(self):
-        """Main solving loop with comprehensive error handling"""
+        """Main solving loop"""
         self.logger.info("Starting solver loop...")
         self.state['status'] = 'running'
         
@@ -900,44 +914,34 @@ Please choose:
                 self.stop()
                 return
         
-        # Initial navigation
         self.driver.get("https://adsha.re/surf")
         if not self.ensure_correct_page():
             self.logger.info("Initial navigation issues, continuing...")
         
-        consecutive_fails = 0
         cycle_count = 0
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
-                # Browser health check
                 if not self.is_browser_alive():
-                    self.logger.error("Browser dead, restarting...")
                     if not self.restart_browser():
-                        self.logger.error("Browser restart failed, stopping...")
                         self.stop()
                         break
                 
-                # Memory cleanup every 50 cycles
                 if cycle_count % 50 == 0:
                     gc.collect()
-                    self.logger.debug("Memory cleanup performed")
                 
-                # Solve game
                 game_solved = self.solve_symbol_game()
                 
                 if game_solved:
-                    consecutive_fails = 0
-                    time.sleep(11)  # Wait for next game
+                    time.sleep(10)  # Wait for next game (10-12 seconds)
                 else:
-                    consecutive_fails += 1
-                    time.sleep(5)  # Longer wait on failure
+                    time.sleep(5)
                 
                 cycle_count += 1
                     
             except Exception as e:
                 self.logger.error(f"Loop error: {e}")
-                consecutive_fails += 1
+                self.state['consecutive_fails'] += 1
                 time.sleep(10)
         
         if self.state['consecutive_fails'] >= CONFIG['max_consecutive_failures']:
@@ -952,26 +956,22 @@ Please choose:
         
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
-        self.state['last_error_screenshot'] = 0
         
         self.solver_thread = threading.Thread(target=self.solver_loop)
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
-        if not self.state['monitoring_active']:
-            self.state['monitoring_active'] = True
-            self.monitoring_thread = threading.Thread(target=self.leaderboard_monitor)
-            self.monitoring_thread.daemon = True
-            self.monitoring_thread.start()
+        self.monitoring_thread = threading.Thread(target=self.leaderboard_monitor)
+        self.monitoring_thread.daemon = True
+        self.monitoring_thread.start()
         
-        self.logger.info("Solver started with complete error handling!")
-        self.send_telegram("🚀 <b>Solver Started with Complete Error Handling!</b>")
+        self.logger.info("Competitive solver started!")
+        self.send_telegram("🚀 Competitive Solver Started!")
         return "✅ Solver started successfully!"
 
     def stop(self):
         """Stop the solver"""
         self.state['is_running'] = False
-        self.state['monitoring_active'] = False
         self.state['status'] = 'stopped'
         
         if self.is_browser_alive():
@@ -984,39 +984,21 @@ Please choose:
                 pass
         
         self.logger.info("Solver stopped")
-        self.send_telegram("🛑 <b>Solver Stopped!</b>")
+        self.send_telegram("🛑 Solver Stopped!")
         return "✅ Solver stopped successfully!"
 
     def status(self):
-        """Get status"""
-        leaderboard = self.parse_leaderboard()
-        status_text = f"""
-📊 <b>Status Report</b>
-⏰ {time.strftime('%H:%M:%S')}
-🔄 Status: {self.state['status']}
-🎯 Games Solved: {self.state['total_solved']}
-🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
-⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
-"""
+        """Get competitive status"""
+        # Refresh leaderboard if stale
+        if time.time() - self.state['last_leaderboard_check'] > 1800:  # 30 minutes
+            self.parse_leaderboard()
         
-        if self.state['daily_target']:
-            status_text += f"🎯 Daily Target: {self.state['daily_target']} sites\n"
-        
-        if leaderboard:
-            my_pos = next((item for item in leaderboard if item['is_me']), None)
-            if my_pos:
-                status_text += f"🏆 My Position: #{my_pos['rank']}\n"
-                if my_pos['rank'] > 1:
-                    leader = leaderboard[0]
-                    gap = leader['total_surfed'] - my_pos['total_surfed']
-                    status_text += f"📈 Gap to #1: {gap} sites\n"
-        
-        return status_text
+        return self.get_competitive_status()
 
 # Telegram Bot
 class TelegramBot:
     def __init__(self):
-        self.solver = FirefoxSymbolGameSolver()
+        self.solver = CompetitiveSymbolSolver()
         self.logger = logging.getLogger(__name__)
         self.last_update_id = 0
     
@@ -1039,9 +1021,8 @@ class TelegramBot:
     
     def process_message(self, update):
         """Process Telegram message"""
-        if 'message' not in update or 'text' not in update['message']:
-            # Check for document upload (cookies file)
-            if 'document' in update['message']:
+        if 'message' not in update:
+            if 'document' in update.get('message', {}):
                 file_info = update['message']['document']
                 if file_info['file_name'].endswith('.json'):
                     self.solver.handle_cookies_upload(file_info)
@@ -1074,34 +1055,46 @@ class TelegramBot:
                 self.solver.clear_daily_target()
                 response = "🎯 Daily target cleared"
             else:
-                response = self.solver.get_daily_progress()
-        elif text.startswith('/login'):
-            response = "🔐 Attempting login..." if self.solver.force_login() else "❌ Login failed"
-        elif text.startswith('/competitors'):
+                response = "Usage: /target 3000 or /target clear"
+        elif text.startswith('/compete'):
+            parts = text.split()
+            margin = parts[1] if len(parts) > 1 else None
+            self.solver.set_auto_compete(margin)
+            response = f"🏆 Auto-compete mode activated (+{self.solver.state['safety_margin']} margin)"
+        elif text.startswith('/leaderboard'):
             leaderboard = self.solver.parse_leaderboard()
             if leaderboard:
-                comp_text = "🏆 <b>Top 10 Competitors</b>\n"
-                for entry in leaderboard[:10]:
+                leader_text = "🏆 <b>TOP 10 LEADERBOARD</b>\n"
+                for entry in leaderboard:
                     marker = " 👈 YOU" if entry['is_me'] else ""
-                    comp_text += f"{entry['rank']}. #{entry['user_id']} - {entry['total_surfed']} sites{marker}\n"
-                response = comp_text
+                    leader_text += f"{entry['rank']}. #{entry['user_id']} - {entry['today_credits']} credits{marker}\n"
+                response = leader_text
             else:
                 response = "❌ Could not fetch leaderboard"
+        elif text.startswith('/login'):
+            response = "🔐 Attempting login..." if self.solver.force_login() else "❌ Login failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>AdShare Solver Commands</b>
+🤖 <b>Competitive AdShare Solver</b>
 
+<b>Basic Commands:</b>
 /start - Start solver
 /stop - Stop solver  
-/status - Check status
+/status - Competitive status
 /screenshot - Get screenshot
-/target [number] - Set daily target
-/target clear - Clear daily target
 /login - Force login
-/competitors - Show top 10
+
+<b>Target Management:</b>
+/target 3000 - Set daily target
+/target clear - Clear target
+/compete - Auto-compete mode
+/compete 150 - Compete with +150 margin
+
+<b>Information:</b>
+/leaderboard - Show top 10
 /help - Show help
 
-🔐 <b>Cookies System</b>
+🔐 <b>Cookies System:</b>
 - Auto-sends cookies after login
 - Asks for cookies on login page
 - 5-minute auto-login timeout
@@ -1112,21 +1105,19 @@ class TelegramBot:
     
     def handle_updates(self):
         """Handle Telegram updates"""
-        self.logger.info("Starting Telegram bot...")
+        self.logger.info("Starting Competitive Telegram bot...")
         
         while True:
             try:
                 updates = self.get_telegram_updates()
                 for update in updates:
                     self.process_message(update)
-                
                 time.sleep(2)
-                
             except Exception as e:
                 self.logger.error(f"Telegram bot error: {e}")
                 time.sleep(5)
 
 if __name__ == '__main__':
     bot = TelegramBot()
-    bot.logger.info("AdShare Solver with Complete Error Handling started!")
+    bot.logger.info("Competitive AdShare Solver started!")
     bot.handle_updates()
