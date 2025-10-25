@@ -942,11 +942,15 @@ class UltimateSymbolSolver:
                         self.logger.error("Browser restart failed")
                         self.stop()
                         break
-                    # Enhanced re-login after restart
-                    if not self.ensure_logged_in():
-                        self.logger.error("Re-login after restart failed")
+                    # With this DIRECT login approach:
+                    self.logger.info("Forcing login after browser restart...")
+                    if not self.force_login():
+                        self.logger.error("Force login after restart failed")
                         self.stop()
                         break
+                else:
+                    self.state['is_logged_in'] = True
+                    self.logger.info("Login successful after restart!")
                 
                 # Enhanced memory management
                 if cycle_count % 50 == 0:
