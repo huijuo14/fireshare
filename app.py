@@ -223,6 +223,11 @@ class UltimateSymbolSolver:
             
             current_url = self.driver.current_url.lower()
             page_source = self.driver.page_source.lower()
+
+             # ▼▼▼ ADD THIS LINE RIGHT HERE ▼▼▼
+            if "adsha.re/login" in current_url:
+                return "LOGIN_REQUIRED"
+        # ▲▲▲ ADD THIS LINE RIGHT HERE ▲▲▲  
             
             if "login" in current_url or "signin" in current_url:
                 return "LOGIN_REQUIRED"
