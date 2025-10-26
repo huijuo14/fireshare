@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
-FIXED VERSION: Uses userscript's battle-tested solving logic
+FIXED VERSION: Enhanced stale element handling
 """
 
 import os
@@ -21,12 +21,12 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 
 # ==================== CONFIGURATION ====================
 CONFIG = {
-    'email': "jiocloud90@gmail.com",
+    'email': "loginallapps@gmail.com",
     'password': "@Sd2007123",
     'base_delay': 2,
     'random_delay': True,
@@ -509,8 +509,24 @@ class UltimateSymbolSolver:
             self.logger.warning(f"Symbol comparison error: {e}")
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
-    def find_best_match(self):
-        """ALWAYS get fresh elements and find best match (from userscript)"""
+    # ==================== FIXED: STALE ELEMENT HANDLING ====================
+    def safe_click(self, element):
+        """SAFE CLICK with stale element protection"""
+        try:
+            element.click()
+            return True
+        except StaleElementReferenceException:
+            self.logger.info("🔄 Element went stale during click - refreshing page")
+            # Refresh page instead of clicking wrong element
+            self.driver.get("https://adsha.re/surf")
+            time.sleep(3)
+            return False
+        except Exception as e:
+            self.logger.error(f"Click error: {e}")
+            return False
+
+    def find_best_match_fixed(self):
+        """FIXED: Always get fresh elements and handle staleness immediately"""
         try:
             # ALWAYS get fresh elements to avoid staleness
             question_svg = WebDriverWait(self.driver, 10).until(
@@ -546,6 +562,9 @@ class UltimateSymbolSolver:
                             'confidence': comparison['confidence'],
                             'exact': False
                         }
+            except StaleElementReferenceException:
+                self.logger.info("🔄 Element stale during comparison - restarting search")
+                return self.find_best_match_fixed()  # Restart fresh
             except:
                 continue
         
@@ -559,28 +578,8 @@ class UltimateSymbolSolver:
         
         return None
 
-    def wait_for_elements(self, timeout=20):
-        """Wait for game elements to appear"""
-        try:
-            WebDriverWait(self.driver, timeout).until(
-                EC.presence_of_element_located((By.TAG_NAME, "svg"))
-            )
-            
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']"))
-            )
-            
-            self.state['element_not_found_count'] = 0
-            self.logger.info("Game elements found successfully")
-            return True
-            
-        except TimeoutException:
-            self.state['element_not_found_count'] += 1
-            self.logger.warning(f"No game elements found within {timeout} seconds (Count: {self.state['element_not_found_count']})")
-            return False
-
-    def solve_symbol_game(self):
-        """ENHANCED main game solving with USCRIPT LOGIC"""
+    def solve_symbol_game_fixed(self):
+        """FIXED: Main game solving with stale element protection"""
         if not self.state['is_running']:
             return False
         
@@ -609,13 +608,14 @@ class UltimateSymbolSolver:
                 return False
             
             # FIND BEST MATCH WITH FRESH ELEMENTS
-            best_match = self.find_best_match()
+            best_match = self.find_best_match_fixed()
             
             if best_match:
                 # SMART DELAY before clicking (not instant)
                 self.smart_delay()
                 
-                if self.simple_click(best_match['link']):
+                # Use safe click that handles stale elements
+                if self.safe_click(best_match['link']):
                     self.state['total_solved'] += 1
                     self.state['consecutive_fails'] = 0
                     self.state['element_not_found_count'] = 0
@@ -626,7 +626,7 @@ class UltimateSymbolSolver:
                     confidence = best_match['confidence']
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
                     
-                    # Wait for new elements to appear after click
+                    # Wait for new elements to appear after click (reduced from 16s to 7s)
                     try:
                         WebDriverWait(self.driver, 7).until(
                             EC.presence_of_element_located((By.TAG_NAME, "svg"))
@@ -635,7 +635,10 @@ class UltimateSymbolSolver:
                     except TimeoutException:
                         self.logger.info("Elements didn't appear within 7 seconds")
                         return False
-                return True
+                else:
+                    # Click failed due to stale element, page was refreshed
+                    self.logger.info("Click failed - page refreshed, continuing...")
+                    return False
             else:
                 self.logger.info("No good match found")
                 return False
@@ -645,13 +648,33 @@ class UltimateSymbolSolver:
             self.state['consecutive_fails'] += 1
             return False
 
-    def simple_click(self, element):
-        """Enhanced click with better error handling"""
+    # Keep original method names for compatibility but use fixed logic
+    def find_best_match(self):
+        """Wrapper for fixed method"""
+        return self.find_best_match_fixed()
+    
+    def solve_symbol_game(self):
+        """Wrapper for fixed method"""
+        return self.solve_symbol_game_fixed()
+
+    def wait_for_elements(self, timeout=20):
+        """Wait for game elements to appear"""
         try:
-            element.click()
+            WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.TAG_NAME, "svg"))
+            )
+            
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']"))
+            )
+            
+            self.state['element_not_found_count'] = 0
+            self.logger.info("Game elements found successfully")
             return True
-        except Exception as e:
-            self.logger.error(f"Click failed: {e}")
+            
+        except TimeoutException:
+            self.state['element_not_found_count'] += 1
+            self.logger.warning(f"No game elements found within {timeout} seconds (Count: {self.state['element_not_found_count']})")
             return False
 
     # ==================== PERFORMANCE TRACKING ====================
@@ -920,7 +943,7 @@ class UltimateSymbolSolver:
 
     # ==================== ULTIMATE SOLVER LOOP ====================
     def solver_loop(self):
-        """FIXED solving loop with USCRIPT LOGIC"""
+        """FIXED solving loop with stale element protection"""
         self.logger.info("Starting ULTIMATE solver loop...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
@@ -1095,7 +1118,7 @@ class UltimateTelegramBot:
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>ULTIMATE AdShare Solver - USCRIPT LOGIC</b>
+🤖 <b>ULTIMATE AdShare Solver - STALE ELEMENT FIXED</b>
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1116,12 +1139,12 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
-<b>NEW SOLVING ENGINE:</b>
-✅ Battle-tested userscript logic
-✅ Always fresh elements (no staleness)
-✅ Smart delays before clicking
-✅ 90%+ confidence matching
-✅ Dynamic content handling
+<b>FIXED STALE ELEMENTS:</b>
+✅ Safe click with stale protection
+✅ Page refresh on stale elements
+✅ No wrong clicks on stale elements
+✅ Fresh element search every time
+✅ 7s wait for new elements (optimized)
 """
         
         if response:
@@ -1143,5 +1166,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("ULTIMATE AdShare Solver - USCRIPT LOGIC started!")
+    bot.logger.info("ULTIMATE AdShare Solver - STALE ELEMENT FIXED started!")
     bot.handle_updates()
