@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
-FIXED VERSION: Enhanced stale element handling
+FIXED VERSION: Enhanced stale element handling + Complete Competition System
 """
 
 import os
@@ -63,9 +63,10 @@ class UltimateSymbolSolver:
             'leaderboard': [],
             'my_position': None,
             'last_leaderboard_check': 0,
+            'last_target': None,
+            'last_rank': None,
             'performance_metrics': {
                 'games_per_hour': 0,
-                'success_rate': 0,
                 'start_time': 0,
                 'last_hour_count': 0
             }
@@ -706,7 +707,6 @@ class UltimateSymbolSolver:
         return f"""
 📈 <b>PERFORMANCE METRICS</b>
 ⚡ Games/Hour: {metrics['games_per_hour']:.1f}
-🎯 Success Rate: {metrics.get('success_rate', 0):.1f}%
 🕒 Running Time: {self.format_running_time()}
 """
 
@@ -720,9 +720,9 @@ class UltimateSymbolSolver:
         minutes = int((seconds % 3600) // 60)
         return f"{hours}h {minutes}m"
 
-    # ==================== ENHANCED LEADERBOARD COMPETITION ====================
+    # ==================== COMPLETE COMPETITION SYSTEM ====================
     def parse_leaderboard(self):
-        """Enhanced leaderboard parsing"""
+        """Enhanced leaderboard parsing - KEEPING HARDCODED ID"""
         try:
             if not self.is_browser_alive():
                 return None
@@ -755,12 +755,13 @@ class UltimateSymbolSolver:
                     today_match = re.search(r'T:\s*(\d+)', text)
                     today_credits = int(today_match.group(1)) if today_match else 0
                     
+                    # KEEP HARDCODED ID - This is how script identifies user
                     leaderboard.append({
                         'rank': i + 1,
                         'user_id': user_id,
                         'total_surfed': total_surfed,
                         'today_credits': today_credits,
-                        'is_me': user_id == 4242
+                        'is_me': user_id == 4242  # KEEPING HARDCODED ID
                     })
                 except Exception as e:
                     self.logger.warning(f"Error parsing leaderboard entry: {e}")
@@ -796,9 +797,11 @@ class UltimateSymbolSolver:
         my_pos = self.state['my_position']
         
         if my_pos and my_pos['rank'] > 1:
+            # Calculate target: leader's total + safety margin
             target = leader['total_surfed'] + self.state['safety_margin']
             return target
         elif my_pos and my_pos['rank'] == 1:
+            # If already #1, maintain lead over #2
             if len(self.state['leaderboard']) > 1:
                 second_place = self.state['leaderboard'][1]['total_surfed']
                 target = second_place + self.state['safety_margin']
@@ -826,6 +829,7 @@ class UltimateSymbolSolver:
             
             if my_pos and target:
                 leader = self.state['leaderboard'][0]
+                # Calculate gap: how many more sites needed to reach target
                 gap = target - my_pos['total_surfed'] if my_pos['total_surfed'] < target else 0
                 
                 status_text += f"""
@@ -859,11 +863,13 @@ class UltimateSymbolSolver:
                         my_pos = self.state['my_position']
                         
                         if my_pos and target:
+                            # Alert when target changes
                             if target != self.state.get('last_target'):
                                 self.state['last_target'] = target
                                 leader = leaderboard[0]
                                 self.send_telegram(f"🎯 <b>Auto Target Updated:</b> {target} total surfed (Beat #{leader['user_id']} with {leader['total_surfed']})")
                             
+                            # Alert on position changes
                             if my_pos['rank'] <= 3 and my_pos['rank'] != self.state.get('last_rank'):
                                 self.state['last_rank'] = my_pos['rank']
                                 if my_pos['rank'] == 1:
@@ -880,7 +886,7 @@ class UltimateSymbolSolver:
                 self.logger.error(f"Leaderboard monitoring error: {e}")
                 time.sleep(300)
 
-    # ==================== ENHANCED TARGET MANAGEMENT ====================
+    # ==================== COMPLETE TARGET MANAGEMENT ====================
     def set_daily_target(self, target):
         """Enhanced daily target setting"""
         try:
@@ -1118,7 +1124,7 @@ class UltimateTelegramBot:
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>ULTIMATE AdShare Solver - STALE ELEMENT FIXED</b>
+🤖 <b>ULTIMATE AdShare Solver - STALE ELEMENT FIXED + COMPLETE COMPETITION</b>
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1139,12 +1145,18 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
+<b>COMPLETE COMPETITION SYSTEM:</b>
+✅ Auto target calculation (leader + safety margin)
+✅ Position change alerts (#1 celebrations!)
+✅ Gap tracking - shows sites needed to reach #1
+✅ Today's credits tracking
+✅ Safety margin adjustment
+
 <b>FIXED STALE ELEMENTS:</b>
 ✅ Safe click with stale protection
 ✅ Page refresh on stale elements
 ✅ No wrong clicks on stale elements
 ✅ Fresh element search every time
-✅ 7s wait for new elements (optimized)
 """
         
         if response:
@@ -1166,5 +1178,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("ULTIMATE AdShare Solver - STALE ELEMENT FIXED started!")
+    bot.logger.info("ULTIMATE AdShare Solver - STALE ELEMENT FIXED + COMPLETE COMPETITION started!")
     bot.handle_updates()
