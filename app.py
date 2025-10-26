@@ -269,7 +269,7 @@ class UltimateSymbolSolver:
             
         try:
             page_state = self.detect_page_state()
-            self.logger.info(f"Page state detected: {page_state}")
+            #self.logger.info(f"Page state detected: {page_state}")
             
             if page_state == "BROWSER_DEAD":
                 self.logger.error("Browser confirmed dead - restarting...")
@@ -669,7 +669,7 @@ class UltimateSymbolSolver:
             )
             
             self.state['element_not_found_count'] = 0
-            self.logger.info("Game elements found successfully")
+            #self.logger.info("Game elements found successfully")
             return True
             
         except TimeoutException:
@@ -919,7 +919,7 @@ class UltimateSymbolSolver:
         current_fails = self.state['consecutive_fails']
         element_fails = self.state['element_not_found_count']
         
-        self.logger.info(f"Consecutive fails: {current_fails}, Element fails: {element_fails}")
+        #self.logger.info(f"Consecutive fails: {current_fails}, Element fails: {element_fails}")
         
         if not self.is_browser_alive():
             self.logger.error("Browser dead - restarting with login...")
