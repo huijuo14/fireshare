@@ -28,13 +28,13 @@ from bs4 import BeautifulSoup
 CONFIG = {
     'email': "loginallapps@gmail.com",
     'password': "@Sd2007123",
-    'base_delay': 2,
+    'base_delay': 1.5,
     'random_delay': True,
     'min_delay': 0.7,
     'max_delay': 2.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
-    'element_wait_time': 20,
+    'element_wait_time': 5,
     'refresh_after_failures': 3,
     'restart_after_failures': 8,
     'leaderboard_check_interval': 1800,
@@ -628,12 +628,12 @@ class UltimateSymbolSolver:
                     
                     # Wait for new elements to appear after click (reduced from 16s to 7s)
                     try:
-                        WebDriverWait(self.driver, 7).until(
+                        WebDriverWait(self.driver, 2).until(
                             EC.presence_of_element_located((By.TAG_NAME, "svg"))
                         )
                         return True
                     except TimeoutException:
-                        self.logger.info("Elements didn't appear within 7 seconds")
+                        self.logger.info("Elements didn't appear within 2 seconds")
                         return False
                 else:
                     # Click failed due to stale element, page was refreshed
