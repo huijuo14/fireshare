@@ -631,9 +631,8 @@ class UltimateSymbolSolver:
                 return False
 
             # 🎯 ADD THIS LINE: Wait for 10-second countdown to finish
-                   self.logger.info("⏰ Waiting for 10-second countdown...")
-                   time.sleep(10)
-
+            self.logger.info("⏰ Waiting for 10-second countdown...")
+            time.sleep(10)
 
             # Enhanced game detection
             try:
