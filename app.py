@@ -628,12 +628,12 @@ class UltimateSymbolSolver:
                     
                     # Wait for new elements to appear after click
                     try:
-                        WebDriverWait(self.driver, 16).until(
+                        WebDriverWait(self.driver, 7).until(
                             EC.presence_of_element_located((By.TAG_NAME, "svg"))
                         )
                         return True
                     except TimeoutException:
-                        self.logger.info("Elements didn't appear within 16 seconds")
+                        self.logger.info("Elements didn't appear within 7 seconds")
                         return False
                 return True
             else:
