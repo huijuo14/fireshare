@@ -639,6 +639,7 @@ class UltimateSymbolSolver:
                     return False
             else:
                 self.logger.info("No good match found")
+                self.state['element_not_found_count'] += 1
                 return False
             
         except Exception as e:
