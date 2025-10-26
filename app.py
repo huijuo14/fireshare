@@ -624,7 +624,7 @@ class UltimateSymbolSolver:
                     
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
                     confidence = best_match['confidence']
-                    self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
+                    self.logger.info(f"🎯 {match_type} Match! | Total: {self.state['total_solved']}")
                     
                     # Wait for new elements to appear after click (reduced from 16s to 7s)
                     try:
