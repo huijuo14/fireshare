@@ -638,7 +638,7 @@ class UltimateSymbolSolver:
                     self.logger.info("Click failed - page refreshed, continuing...")
                     return False
             else:
-                self.logger.info("No good match found")
+                self.logger.warning("No good match found")
                 self.state['element_not_found_count'] += 1
                 return False
             
