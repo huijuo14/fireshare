@@ -722,7 +722,7 @@ class UltimateSymbolSolver:
 
     # ==================== COMPLETE COMPETITION SYSTEM ====================
     def parse_leaderboard(self):
-    """UPDATED leaderboard parsing for new HTML structure"""
+        """UPDATED leaderboard parsing for new HTML structure"""
     try:
         if not self.is_browser_alive():
             return None
