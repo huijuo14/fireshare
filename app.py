@@ -629,7 +629,12 @@ class UltimateSymbolSolver:
                     self.smart_delay()
                     self.state['element_not_found_count'] = 0
                 return False
-            
+
+            # 🎯 ADD THIS LINE: Wait for 10-second countdown to finish
+                   self.logger.info("⏰ Waiting for 10-second countdown...")
+                   time.sleep(10)
+
+
             # Enhanced game detection
             try:
                 question_svg = WebDriverWait(self.driver, 10).until(
