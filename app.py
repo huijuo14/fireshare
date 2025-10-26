@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
-FIXED VERSION: Critical browser death & login recovery fix - ALL FEATURES
+FIXED VERSION: Smart failure tracking with element-based reset
 """
 
 import os
@@ -34,8 +34,9 @@ CONFIG = {
     'max_delay': 2.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
-    'refresh_page_after_failures': 4,
-    'browser_restart_after_failures': 8,
+    'element_wait_time': 20,  # Wait 20 seconds for elements
+    'refresh_after_failures': 3,  # Refresh after 3 consecutive failures
+    'restart_after_failures': 8,  # Restart browser after 8 failures
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
@@ -54,6 +55,7 @@ class UltimateSymbolSolver:
             'status': 'stopped',
             'is_logged_in': False,
             'consecutive_fails': 0,
+            'element_not_found_count': 0,  # Track element not found separately
             'daily_target': None,
             'auto_compete': True,
             'safety_margin': CONFIG['safety_margin'],
@@ -216,6 +218,7 @@ class UltimateSymbolSolver:
             # CRITICAL FIX: Reset login state when restarting browser
             self.state['is_logged_in'] = False
             self.state['consecutive_fails'] = 0
+            self.state['element_not_found_count'] = 0
             
             success = self.setup_firefox()
             if success:
@@ -523,20 +526,23 @@ class UltimateSymbolSolver:
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
     def find_best_match(self, question_svg, links):
-        """Enhanced best match finding with fresh elements"""
+        """ENHANCED best match finding with PROPER fresh elements"""
         best_match = None
         highest_confidence = 0
         exact_matches = []
         
-        # Always get fresh elements to avoid stale references
+        # CRITICAL FIX: Always get fresh elements to avoid stale references
         try:
             question_svg = WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "svg"))
             )
             links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']")
         except:
+            # If we can't get fresh elements, we CANNOT proceed safely
+            self.logger.warning("Cannot get fresh elements - page may have changed")
             return None
         
+        # Now we have FRESH elements, proceed with comparison
         for link in links:
             try:
                 answer_svg = link.find_element(By.TAG_NAME, "svg")
@@ -557,7 +563,8 @@ class UltimateSymbolSolver:
                             'confidence': comparison['confidence'],
                             'exact': False
                         }
-            except:
+            except Exception as e:
+                # If we can't find SVG in this link, skip it
                 continue
         
         if exact_matches:
@@ -568,8 +575,31 @@ class UltimateSymbolSolver:
         
         return None
 
+    def wait_for_elements(self, timeout=20):
+        """Wait for game elements to appear with smart tracking"""
+        try:
+            # Wait for SVG element to appear
+            question_svg = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.TAG_NAME, "svg"))
+            )
+            
+            # Wait for answer options to appear
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']"))
+            )
+            
+            # RESET element not found count since we found elements
+            self.state['element_not_found_count'] = 0
+            self.logger.info("Game elements found successfully")
+            return True
+            
+        except TimeoutException:
+            self.state['element_not_found_count'] += 1
+            self.logger.warning(f"No game elements found within {timeout} seconds (Count: {self.state['element_not_found_count']})")
+            return False
+
     def solve_symbol_game(self):
-        """ENHANCED main game solving with PROPER error recovery"""
+        """ENHANCED main game solving with SMART failure tracking"""
         if not self.state['is_running']:
             return False
         
@@ -586,13 +616,27 @@ class UltimateSymbolSolver:
                 self.state['consecutive_fails'] += 1
                 return False
             
-            # Enhanced game detection with multiple strategies
+            # SMART ELEMENT WAITING with failure tracking
+            if not self.wait_for_elements(CONFIG['element_wait_time']):
+                # Elements not found - check if we need to refresh
+                if self.state['element_not_found_count'] >= CONFIG['refresh_after_failures']:
+                    self.logger.info(f"{self.state['element_not_found_count']} consecutive element failures - refreshing page...")
+                    self.send_telegram(f"🔄 {self.state['element_not_found_count']} element failures - refreshing page")
+                    self.driver.get("https://adsha.re/surf")
+                    WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    self.smart_delay()
+                    self.state['element_not_found_count'] = 0
+                return False
+            
+            # Enhanced game detection
             try:
                 question_svg = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "svg"))
                 )
             except TimeoutException:
-                self.logger.info("No game found - waiting for game...")
+                self.logger.info("SVG element disappeared - waiting...")
                 return False
             
             # Enhanced answer option finding
@@ -607,7 +651,8 @@ class UltimateSymbolSolver:
             if best_match:
                 if self.simple_click(best_match['link']):
                     self.state['total_solved'] += 1
-                    self.state['consecutive_fails'] = 0
+                    self.state['consecutive_fails'] = 0  # RESET on successful solve
+                    self.state['element_not_found_count'] = 0  # RESET on successful solve
                     
                     # Update performance metrics
                     self.update_performance_metrics()
@@ -781,6 +826,7 @@ class UltimateSymbolSolver:
 🎮 Games Solved: {self.state['total_solved']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🎯 Element Fails: {self.state['element_not_found_count']}/{CONFIG['refresh_after_failures']}
 """
         
         # Add performance metrics
@@ -883,12 +929,13 @@ class UltimateSymbolSolver:
         self.send_telegram(f"🏆 <b>Auto-compete mode activated</b>{margin_text} - Targeting #1 position")
         return True
 
-    # ==================== CRITICAL FIX: FAILURE HANDLING ====================
+    # ==================== SMART FAILURE HANDLING ====================
     def handle_consecutive_failures(self):
-        """FIXED progressive failure handling"""
+        """SMART failure handling with element-based tracking"""
         current_fails = self.state['consecutive_fails']
+        element_fails = self.state['element_not_found_count']
         
-        self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
+        self.logger.info(f"Consecutive fails: {current_fails}, Element fails: {element_fails}")
         
         # CRITICAL FIX: Check browser health FIRST
         if not self.is_browser_alive():
@@ -896,39 +943,16 @@ class UltimateSymbolSolver:
             self.send_telegram("🔄 Browser dead - restarting with fresh login...")
             if self.restart_browser():
                 self.state['consecutive_fails'] = 0
+                self.state['element_not_found_count'] = 0
             return
         
-        # Progressive recovery system
-        if current_fails >= CONFIG['refresh_page_after_failures']:
-            self.logger.info(f"{current_fails} consecutive failures - checking page state...")
-            page_state = self.detect_page_state()
-            
-            if page_state == "LOGIN_REQUIRED":
-                self.logger.info("Login required - forcing login...")
-                self.send_telegram("🔐 Login required - attempting login...")
-                if self.force_login():
-                    self.state['consecutive_fails'] = 0
-                    self.send_telegram("✅ Login successful after failure!")
-                return
-            else:
-                self.logger.info("Refreshing surf page...")
-                self.send_telegram(f"🔄 {current_fails} failures - refreshing page...")
-                
-                try:
-                    self.driver.get("https://adsha.re/surf")
-                    WebDriverWait(self.driver, 15).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                    self.smart_delay()
-                    self.state['consecutive_fails'] = 0
-                except Exception as e:
-                    self.logger.error(f"Page refresh failed: {e}")
-        
-        elif current_fails >= CONFIG['browser_restart_after_failures']:
-            self.logger.warning("Multiple failures - restarting browser...")
+        # SMART RECOVERY: Only refresh/restart based on actual failures
+        if current_fails >= CONFIG['restart_after_failures']:
+            self.logger.warning("Multiple consecutive failures - restarting browser...")
             self.send_telegram("🔄 Multiple failures - restarting browser...")
             if self.restart_browser():
                 self.state['consecutive_fails'] = 0
+                self.state['element_not_found_count'] = 0
         
         elif current_fails >= CONFIG['max_consecutive_failures']:
             self.logger.error("CRITICAL: Too many failures! Stopping...")
@@ -937,7 +961,7 @@ class UltimateSymbolSolver:
 
     # ==================== ULTIMATE SOLVER LOOP ====================
     def solver_loop(self):
-        """FIXED solving loop with PROPER error recovery"""
+        """FIXED solving loop with SMART failure tracking"""
         self.logger.info("Starting ULTIMATE solver loop...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
@@ -997,6 +1021,7 @@ class UltimateSymbolSolver:
         
         self.state['is_running'] = True
         self.state['consecutive_fails'] = 0
+        self.state['element_not_found_count'] = 0
         self.state['performance_metrics']['start_time'] = time.time()
         
         self.solver_thread = threading.Thread(target=self.solver_loop)
@@ -1120,7 +1145,7 @@ class UltimateTelegramBot:
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>ULTIMATE AdShare Solver - FIXED VERSION</b>
+🤖 <b>ULTIMATE AdShare Solver - SMART FAILURE TRACKING</b>
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1141,21 +1166,13 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
-<b>CRITICAL FIXES:</b>
-✅ Browser death detection & recovery
-✅ No more redirect loops  
-✅ Proper login state management
-✅ Enhanced error handling
-✅ Memory optimization
-
-<b>All Features Working:</b>
-✅ Symbol matching algorithm
-✅ Leaderboard competition  
-✅ Performance tracking
-✅ Telegram integration
-✅ uBlock Origin
-✅ Progressive error recovery
-            """
+<b>SMART FAILURE TRACKING:</b>
+✅ Waits 20 seconds for elements
+✅ Refreshes after 3 element failures  
+✅ Resets counters when elements found
+✅ Browser restart after 8 failures
+✅ No unnecessary refreshes
+"""
         
         if response:
             self.solver.send_telegram(response)
@@ -1176,5 +1193,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("ULTIMATE AdShare Solver - FIXED VERSION with ALL FEATURES started!")
+    bot.logger.info("ULTIMATE AdShare Solver - SMART FAILURE TRACKING started!")
     bot.handle_updates()
