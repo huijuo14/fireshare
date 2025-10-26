@@ -597,7 +597,7 @@ class UltimateSymbolSolver:
             # Wait for elements to appear
             if not self.wait_for_elements(CONFIG['element_wait_time']):
                 if self.state['element_not_found_count'] >= CONFIG['refresh_after_failures']:
-                    self.logger.info(f"{self.state['element_not_found_count']} consecutive element failures - refreshing page...")
+                    #self.logger.info(f"{self.state['element_not_found_count']} consecutive element failures - refreshing page...")
                     self.send_telegram(f"🔄 {self.state['element_not_found_count']} element failures - refreshing page")
                     self.driver.get("https://adsha.re/surf")
                     WebDriverWait(self.driver, 15).until(
@@ -633,7 +633,7 @@ class UltimateSymbolSolver:
                         )
                         return True
                     except TimeoutException:
-                        self.logger.info("Elements didn't appear within 2 seconds")
+                        #self.logger.info("Elements didn't appear within 2 seconds")
                         return False
                 else:
                     # Click failed due to stale element, page was refreshed
