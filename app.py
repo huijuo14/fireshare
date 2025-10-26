@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
-FIXED VERSION: Smart failure tracking with element-based reset
+FIXED VERSION: Uses userscript's battle-tested solving logic
 """
 
 import os
@@ -34,12 +34,13 @@ CONFIG = {
     'max_delay': 2.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
-    'element_wait_time': 20,  # Wait 20 seconds for elements
-    'refresh_after_failures': 3,  # Refresh after 3 consecutive failures
-    'restart_after_failures': 8,  # Restart browser after 8 failures
+    'element_wait_time': 20,
+    'refresh_after_failures': 3,
+    'restart_after_failures': 8,
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
+    'minimum_confidence': 0.90,  # From userscript
 }
 
 class UltimateSymbolSolver:
@@ -55,7 +56,7 @@ class UltimateSymbolSolver:
             'status': 'stopped',
             'is_logged_in': False,
             'consecutive_fails': 0,
-            'element_not_found_count': 0,  # Track element not found separately
+            'element_not_found_count': 0,
             'daily_target': None,
             'auto_compete': True,
             'safety_margin': CONFIG['safety_margin'],
@@ -158,7 +159,6 @@ class UltimateSymbolSolver:
         try:
             if not self.driver:
                 return False
-            # Multiple checks to ensure browser is truly alive
             self.driver.current_url
             self.driver.title
             return True
@@ -184,7 +184,7 @@ class UltimateSymbolSolver:
             options.set_preference("browser.sessionhistory.max_entries", 1)
             options.set_preference("image.mem.max_decoded_image_kb", 512)
             options.set_preference("media.memory_cache_max_size", 1024)
-            options.set_preference("permissions.default.image", 1)  # ALLOW IMAGES
+            options.set_preference("permissions.default.image", 1)
             options.set_preference("gfx.webrender.all", True)
             options.set_preference("network.http.max-connections", 10)
             
@@ -215,7 +215,6 @@ class UltimateSymbolSolver:
             time.sleep(3)
             gc.collect()
             
-            # CRITICAL FIX: Reset login state when restarting browser
             self.state['is_logged_in'] = False
             self.state['consecutive_fails'] = 0
             self.state['element_not_found_count'] = 0
@@ -223,7 +222,6 @@ class UltimateSymbolSolver:
             success = self.setup_firefox()
             if success:
                 self.logger.info("Browser restart successful - login required")
-                # Force fresh login after restart
                 login_success = self.force_login()
                 if login_success:
                     self.state['is_logged_in'] = True
@@ -233,9 +231,9 @@ class UltimateSymbolSolver:
             self.logger.error(f"Browser restart failed: {e}")
             return False
 
-    # ==================== CRITICAL FIX: PAGE STATE DETECTION ====================
+    # ==================== PAGE STATE DETECTION ====================
     def detect_page_state(self):
-        """ULTRA-RELIABLE page state detection with browser death check"""
+        """ULTRA-RELIABLE page state detection"""
         try:
             if not self.is_browser_alive():
                 return "BROWSER_DEAD"
@@ -243,9 +241,8 @@ class UltimateSymbolSolver:
             current_url = self.driver.current_url.lower()
             page_source = self.driver.page_source.lower()
 
-            # CRITICAL FIX: Check for login page FIRST
             if "adsha.re/login" in current_url or "login" in current_url or "signin" in current_url:
-                self.state['is_logged_in'] = False  # Reset login state
+                self.state['is_logged_in'] = False
                 return "LOGIN_REQUIRED"
             elif "surf" in current_url and "svg" in page_source:
                 return "GAME_ACTIVE"
@@ -262,7 +259,7 @@ class UltimateSymbolSolver:
                 
         except Exception as e:
             self.logger.error(f"Page state detection error: {e}")
-            return "BROWSER_DEAD"  # Assume browser is dead on any error
+            return "BROWSER_DEAD"
 
     def ensure_correct_page(self):
         """ENHANCED page correction with PROPER login handling"""
@@ -308,14 +305,6 @@ class UltimateSymbolSolver:
             self.logger.error(f"Page correction error: {e}")
             return False
 
-    def ensure_logged_in(self):
-        """Enhanced login verification"""
-        if not self.is_browser_alive():
-            self.logger.error("Browser not alive")
-            return False
-        
-        return self.ensure_correct_page()
-
     # ==================== ULTIMATE LOGIN SYSTEM ====================
     def force_login(self):
         """ULTIMATE WORKING LOGIN - Enhanced version"""
@@ -354,7 +343,6 @@ class UltimateSymbolSolver:
             
             self.logger.info(f"Password field: {password_field_name}")
             
-            # Enhanced email filling with multiple strategies
             email_selectors = [
                 "input[name='mail']",
                 "input[type='email']",
@@ -381,7 +369,6 @@ class UltimateSymbolSolver:
             
             self.smart_delay()
             
-            # Enhanced password filling
             password_selectors = [
                 f"input[name='{password_field_name}']",
                 "input[type='password']",
@@ -406,7 +393,6 @@ class UltimateSymbolSolver:
             
             self.smart_delay()
             
-            # Enhanced login button clicking
             login_selectors = [
                 "button[type='submit']",
                 "input[type='submit']",
@@ -439,9 +425,8 @@ class UltimateSymbolSolver:
                     pass
             
             self.smart_delay()
-            time.sleep(8)  # Wait for login processing
+            time.sleep(8)
             
-            # Enhanced login verification
             self.driver.get("https://adsha.re/surf")
             self.smart_delay()
             
@@ -473,27 +458,24 @@ class UltimateSymbolSolver:
         time.sleep(delay)
         return delay
 
-    def simple_click(self, element):
-        """Enhanced click with better error handling"""
-        try:
-            self.smart_delay()
-            element.click()
-            return True
-        except Exception as e:
-            self.logger.error(f"Click failed: {e}")
-            return False
-
     def calculate_similarity(self, str1, str2):
-        """Calculate string similarity"""
+        """Calculate string similarity (from userscript)"""
         if len(str1) == 0 or len(str2) == 0:
             return 0.0
         
+        longer = str1 if len(str1) > len(str2) else str2
+        shorter = str2 if len(str1) > len(str2) else str1
+        
+        if len(longer) == 0:
+            return 1.0
+        
+        # Simple character matching (more reliable than Levenshtein)
         common_chars = sum(1 for a, b in zip(str1, str2) if a == b)
         max_len = max(len(str1), len(str2))
         return common_chars / max_len if max_len > 0 else 0.0
 
     def compare_symbols(self, question_svg, answer_svg):
-        """Enhanced symbol comparison"""
+        """Enhanced symbol comparison (from userscript)"""
         try:
             question_content = question_svg.get_attribute('innerHTML')
             answer_content = answer_svg.get_attribute('innerHTML')
@@ -513,11 +495,13 @@ class UltimateSymbolSolver:
             clean_question = clean_svg(question_content)
             clean_answer = clean_svg(answer_content)
             
+            # Exact match (preferred)
             if clean_question == clean_answer:
                 return {'match': True, 'confidence': 1.0, 'exact': True}
             
+            # Fuzzy matching
             similarity = self.calculate_similarity(clean_question, clean_answer)
-            should_match = similarity >= 0.90
+            should_match = similarity >= CONFIG['minimum_confidence']
             
             return {'match': should_match, 'confidence': similarity, 'exact': False}
             
@@ -525,30 +509,28 @@ class UltimateSymbolSolver:
             self.logger.warning(f"Symbol comparison error: {e}")
             return {'match': False, 'confidence': 0.0, 'exact': False}
 
-    def find_best_match(self, question_svg, links):
-        """ENHANCED best match finding with PROPER fresh elements"""
-        best_match = None
-        highest_confidence = 0
-        exact_matches = []
-        
-        # CRITICAL FIX: Always get fresh elements to avoid stale references
+    def find_best_match(self):
+        """ALWAYS get fresh elements and find best match (from userscript)"""
         try:
-            question_svg = WebDriverWait(self.driver, 5).until(
+            # ALWAYS get fresh elements to avoid staleness
+            question_svg = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "svg"))
             )
             links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']")
         except:
-            # If we can't get fresh elements, we CANNOT proceed safely
-            self.logger.warning("Cannot get fresh elements - page may have changed")
             return None
         
-        # Now we have FRESH elements, proceed with comparison
+        best_match = None
+        highest_confidence = 0
+        exact_matches = []
+        
         for link in links:
             try:
                 answer_svg = link.find_element(By.TAG_NAME, "svg")
                 if answer_svg:
                     comparison = self.compare_symbols(question_svg, answer_svg)
                     
+                    # Always prefer exact matches
                     if comparison['exact'] and comparison['match']:
                         exact_matches.append({
                             'link': link,
@@ -556,6 +538,7 @@ class UltimateSymbolSolver:
                             'exact': True
                         })
                     
+                    # Consider high-confidence fuzzy matches
                     elif comparison['match'] and comparison['confidence'] > highest_confidence:
                         highest_confidence = comparison['confidence']
                         best_match = {
@@ -563,32 +546,30 @@ class UltimateSymbolSolver:
                             'confidence': comparison['confidence'],
                             'exact': False
                         }
-            except Exception as e:
-                # If we can't find SVG in this link, skip it
+            except:
                 continue
         
+        # Return exact match if available
         if exact_matches:
             return exact_matches[0]
         
-        if best_match and best_match['confidence'] >= 0.90:
+        # Return best fuzzy match if confidence is high enough
+        if best_match and best_match['confidence'] >= CONFIG['minimum_confidence']:
             return best_match
         
         return None
 
     def wait_for_elements(self, timeout=20):
-        """Wait for game elements to appear with smart tracking"""
+        """Wait for game elements to appear"""
         try:
-            # Wait for SVG element to appear
-            question_svg = WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(self.driver, timeout).until(
                 EC.presence_of_element_located((By.TAG_NAME, "svg"))
             )
             
-            # Wait for answer options to appear
             WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']"))
             )
             
-            # RESET element not found count since we found elements
             self.state['element_not_found_count'] = 0
             self.logger.info("Game elements found successfully")
             return True
@@ -599,26 +580,23 @@ class UltimateSymbolSolver:
             return False
 
     def solve_symbol_game(self):
-        """ENHANCED main game solving with SMART failure tracking"""
+        """ENHANCED main game solving with USCRIPT LOGIC"""
         if not self.state['is_running']:
             return False
         
-        # CRITICAL FIX: Always check browser health first
         if not self.is_browser_alive():
             self.logger.error("Browser dead during game solving")
             self.state['consecutive_fails'] += 1
             return False
             
         try:
-            # Enhanced page verification
             if not self.ensure_correct_page():
                 self.logger.error("Cannot ensure correct page status")
                 self.state['consecutive_fails'] += 1
                 return False
             
-            # SMART ELEMENT WAITING with failure tracking
+            # Wait for elements to appear
             if not self.wait_for_elements(CONFIG['element_wait_time']):
-                # Elements not found - check if we need to refresh
                 if self.state['element_not_found_count'] >= CONFIG['refresh_after_failures']:
                     self.logger.info(f"{self.state['element_not_found_count']} consecutive element failures - refreshing page...")
                     self.send_telegram(f"🔄 {self.state['element_not_found_count']} element failures - refreshing page")
@@ -629,48 +607,30 @@ class UltimateSymbolSolver:
                     self.smart_delay()
                     self.state['element_not_found_count'] = 0
                 return False
-
-            # 🎯 ADD THIS LINE: Wait for 10-second countdown to finish
-            self.logger.info("⏰ Waiting for 10-second countdown...")
-            time.sleep(10)
-
-            # Enhanced game detection
-            try:
-                question_svg = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "svg"))
-                )
-            except TimeoutException:
-                self.logger.info("SVG element disappeared - waiting...")
-                return False
             
-            # Enhanced answer option finding
-            links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], button, .answer-option, [class*='answer'], [class*='option']")
-            
-            if not links:
-                self.logger.info("No answer options found")
-                return False
-            
-            best_match = self.find_best_match(question_svg, links)
+            # FIND BEST MATCH WITH FRESH ELEMENTS
+            best_match = self.find_best_match()
             
             if best_match:
+                # SMART DELAY before clicking (not instant)
+                self.smart_delay()
+                
                 if self.simple_click(best_match['link']):
                     self.state['total_solved'] += 1
-                    self.state['consecutive_fails'] = 0  # RESET on successful solve
-                    self.state['element_not_found_count'] = 0  # RESET on successful solve
+                    self.state['consecutive_fails'] = 0
+                    self.state['element_not_found_count'] = 0
                     
-                    # Update performance metrics
                     self.update_performance_metrics()
                     
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
                     confidence = best_match['confidence']
                     self.logger.info(f"🎯 {match_type} Match! Confidence: {confidence:.2f} | Total: {self.state['total_solved']}")
                     
-                    # Wait for elements to reappear (max 16 seconds)
+                    # Wait for new elements to appear after click
                     try:
                         WebDriverWait(self.driver, 16).until(
                             EC.presence_of_element_located((By.TAG_NAME, "svg"))
                         )
-                        # Elements found! smart_delay will add 1-3s before next click
                         return True
                     except TimeoutException:
                         self.logger.info("Elements didn't appear within 16 seconds")
@@ -683,6 +643,15 @@ class UltimateSymbolSolver:
         except Exception as e:
             self.logger.error(f"Solver error: {e}")
             self.state['consecutive_fails'] += 1
+            return False
+
+    def simple_click(self, element):
+        """Enhanced click with better error handling"""
+        try:
+            element.click()
+            return True
+        except Exception as e:
+            self.logger.error(f"Click failed: {e}")
             return False
 
     # ==================== PERFORMANCE TRACKING ====================
@@ -698,12 +667,10 @@ class UltimateSymbolSolver:
             metrics['start_time'] = current_time
             metrics['last_hour_count'] = 0
         
-        # Calculate games per hour
         hours_running = (current_time - metrics['start_time']) / 3600
         if hours_running > 0:
             metrics['games_per_hour'] = self.state['total_solved'] / hours_running
         
-        # Update hourly count
         metrics['last_hour_count'] += 1
 
     def get_performance_status(self):
@@ -732,7 +699,7 @@ class UltimateSymbolSolver:
 
     # ==================== ENHANCED LEADERBOARD COMPETITION ====================
     def parse_leaderboard(self):
-        """Enhanced leaderboard parsing with multiple strategies"""
+        """Enhanced leaderboard parsing"""
         try:
             if not self.is_browser_alive():
                 return None
@@ -746,10 +713,8 @@ class UltimateSymbolSolver:
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             leaderboard = []
             
-            # Multiple selector strategies for leaderboard
             user_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x)
             
-            # Alternative strategy if first fails
             if not user_divs:
                 user_divs = soup.find_all('div', class_=True)
                 user_divs = [div for div in user_divs if '#' in div.get_text()]
@@ -758,15 +723,12 @@ class UltimateSymbolSolver:
                 try:
                     text = div.get_text()
                     
-                    # Enhanced user ID extraction
                     user_match = re.search(r'#(\d+)', text)
                     user_id = int(user_match.group(1)) if user_match else None
                     
-                    # Enhanced total surfed extraction
                     surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
                     total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
                     
-                    # Enhanced today's credits extraction
                     today_match = re.search(r'T:\s*(\d+)', text)
                     today_credits = int(today_match.group(1)) if today_match else 0
                     
@@ -775,7 +737,7 @@ class UltimateSymbolSolver:
                         'user_id': user_id,
                         'total_surfed': total_surfed,
                         'today_credits': today_credits,
-                        'is_me': user_id == 4242  # Your user ID
+                        'is_me': user_id == 4242
                     })
                 except Exception as e:
                     self.logger.warning(f"Error parsing leaderboard entry: {e}")
@@ -833,10 +795,8 @@ class UltimateSymbolSolver:
 🎯 Element Fails: {self.state['element_not_found_count']}/{CONFIG['refresh_after_failures']}
 """
         
-        # Add performance metrics
         status_text += self.get_performance_status()
         
-        # Enhanced competition info
         if self.state['auto_compete'] and self.state['leaderboard']:
             target = self.get_competitive_target()
             my_pos = self.state['my_position']
@@ -855,7 +815,6 @@ class UltimateSymbolSolver:
         elif self.state['daily_target']:
             status_text += f"🎯 <b>Daily Target:</b> {self.state['daily_target']} sites\n"
         
-        # Enhanced leaderboard preview
         if self.state['leaderboard']:
             status_text += f"\n🏆 <b>LEADERBOARD (Top 3):</b>\n"
             for entry in self.state['leaderboard'][:3]:
@@ -882,7 +841,6 @@ class UltimateSymbolSolver:
                                 leader = leaderboard[0]
                                 self.send_telegram(f"🎯 <b>Auto Target Updated:</b> {target} total surfed (Beat #{leader['user_id']} with {leader['total_surfed']})")
                             
-                            # Enhanced competition alerts
                             if my_pos['rank'] <= 3 and my_pos['rank'] != self.state.get('last_rank'):
                                 self.state['last_rank'] = my_pos['rank']
                                 if my_pos['rank'] == 1:
@@ -890,7 +848,6 @@ class UltimateSymbolSolver:
                                 else:
                                     self.send_telegram(f"📈 <b>Now in position #{my_pos['rank']}!</b>")
                 
-                # Enhanced monitoring interval
                 for _ in range(CONFIG['leaderboard_check_interval']):
                     if not self.state['is_running']:
                         break
@@ -898,7 +855,7 @@ class UltimateSymbolSolver:
                     
             except Exception as e:
                 self.logger.error(f"Leaderboard monitoring error: {e}")
-                time.sleep(300)  # Wait 5 minutes on error
+                time.sleep(300)
 
     # ==================== ENHANCED TARGET MANAGEMENT ====================
     def set_daily_target(self, target):
@@ -935,13 +892,12 @@ class UltimateSymbolSolver:
 
     # ==================== SMART FAILURE HANDLING ====================
     def handle_consecutive_failures(self):
-        """SMART failure handling with element-based tracking"""
+        """SMART failure handling"""
         current_fails = self.state['consecutive_fails']
         element_fails = self.state['element_not_found_count']
         
         self.logger.info(f"Consecutive fails: {current_fails}, Element fails: {element_fails}")
         
-        # CRITICAL FIX: Check browser health FIRST
         if not self.is_browser_alive():
             self.logger.error("Browser dead - restarting with login...")
             self.send_telegram("🔄 Browser dead - restarting with fresh login...")
@@ -950,7 +906,6 @@ class UltimateSymbolSolver:
                 self.state['element_not_found_count'] = 0
             return
         
-        # SMART RECOVERY: Only refresh/restart based on actual failures
         if current_fails >= CONFIG['restart_after_failures']:
             self.logger.warning("Multiple consecutive failures - restarting browser...")
             self.send_telegram("🔄 Multiple failures - restarting browser...")
@@ -965,42 +920,35 @@ class UltimateSymbolSolver:
 
     # ==================== ULTIMATE SOLVER LOOP ====================
     def solver_loop(self):
-        """FIXED solving loop with SMART failure tracking"""
+        """FIXED solving loop with USCRIPT LOGIC"""
         self.logger.info("Starting ULTIMATE solver loop...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
         
-        # Enhanced browser setup with forced login
         if not self.driver:
             if not self.setup_firefox():
                 self.logger.error("CRITICAL: Cannot start - Firefox failed")
                 self.stop()
                 return
         
-        # CRITICAL FIX: Always force initial login
         if not self.force_login():
             self.logger.error("CRITICAL: Initial login failed")
             self.stop()
             return
         
         cycle_count = 0
-        last_memory_cleanup = time.time()
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
-                # Enhanced memory management
                 if cycle_count % 50 == 0:
                     gc.collect()
                 
-                # Periodic performance reporting
                 if cycle_count % 100 == 0:
                     self.logger.info(f"Performance: {self.state['total_solved']} games solved | {self.state['performance_metrics']['games_per_hour']:.1f} games/hour")
                 
-                # Solve game
                 game_solved = self.solve_symbol_game()
                 
                 if game_solved:
-                    # Success - continue normally
                     pass
                 else:
                     self.handle_consecutive_failures()
@@ -1045,7 +993,6 @@ class UltimateSymbolSolver:
         self.state['is_running'] = False
         self.state['status'] = 'stopped'
         
-        # Calculate final performance metrics
         if self.state['performance_metrics']['start_time'] > 0:
             total_time = time.time() - self.state['performance_metrics']['start_time']
             games_per_hour = self.state['total_solved'] / (total_time / 3600) if total_time > 0 else 0
@@ -1063,7 +1010,6 @@ class UltimateSymbolSolver:
 
     def status(self):
         """Enhanced status with all features"""
-        # Refresh leaderboard if stale
         if time.time() - self.state['last_leaderboard_check'] > 1800:
             self.parse_leaderboard()
         
@@ -1094,7 +1040,7 @@ class UltimateTelegramBot:
             return []
     
     def process_message(self, update):
-        """Enhanced message processing - ALL COMMANDS INCLUDED"""
+        """Enhanced message processing"""
         if 'message' not in update:
             return
         
@@ -1149,7 +1095,7 @@ class UltimateTelegramBot:
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>ULTIMATE AdShare Solver - SMART FAILURE TRACKING</b>
+🤖 <b>ULTIMATE AdShare Solver - USCRIPT LOGIC</b>
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1170,12 +1116,12 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
-<b>SMART FAILURE TRACKING:</b>
-✅ Waits 20 seconds for elements
-✅ Refreshes after 3 element failures  
-✅ Resets counters when elements found
-✅ Browser restart after 8 failures
-✅ No unnecessary refreshes
+<b>NEW SOLVING ENGINE:</b>
+✅ Battle-tested userscript logic
+✅ Always fresh elements (no staleness)
+✅ Smart delays before clicking
+✅ 90%+ confidence matching
+✅ Dynamic content handling
 """
         
         if response:
@@ -1197,5 +1143,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("ULTIMATE AdShare Solver - SMART FAILURE TRACKING started!")
+    bot.logger.info("ULTIMATE AdShare Solver - USCRIPT LOGIC started!")
     bot.handle_updates()
