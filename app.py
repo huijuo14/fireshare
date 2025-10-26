@@ -722,71 +722,80 @@ class UltimateSymbolSolver:
 
     # ==================== COMPLETE COMPETITION SYSTEM ====================
     def parse_leaderboard(self):
-        """Enhanced leaderboard parsing - KEEPING HARDCODED ID"""
-        try:
-            if not self.is_browser_alive():
-                return None
-            
-            original_window = self.driver.current_window_handle
-            self.driver.execute_script("window.open('https://adsha.re/ten', '_blank')")
-            self.driver.switch_to.window(self.driver.window_handles[-1])
-            
-            time.sleep(3)
-            
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            leaderboard = []
-            
-            user_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x)
-            
-            if not user_divs:
-                user_divs = soup.find_all('div', class_=True)
-                user_divs = [div for div in user_divs if '#' in div.get_text()]
-            
-            for i, div in enumerate(user_divs[:10]):
-                try:
-                    text = div.get_text()
-                    
-                    user_match = re.search(r'#(\d+)', text)
-                    user_id = int(user_match.group(1)) if user_match else None
-                    
-                    surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
-                    total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
-                    
-                    today_match = re.search(r'T:\s*(\d+)', text)
-                    today_credits = int(today_match.group(1)) if today_match else 0
-                    
-                    # KEEP HARDCODED ID - This is how script identifies user
-                    leaderboard.append({
-                        'rank': i + 1,
-                        'user_id': user_id,
-                        'total_surfed': total_surfed,
-                        'today_credits': today_credits,
-                        'is_me': user_id == 4242  # KEEPING HARDCODED ID
-                    })
-                except Exception as e:
-                    self.logger.warning(f"Error parsing leaderboard entry: {e}")
-                    continue
-            
-            self.driver.close()
-            self.driver.switch_to.window(original_window)
-            
-            self.state['last_leaderboard_check'] = time.time()
-            self.state['leaderboard'] = leaderboard
-            self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
-            
-            if leaderboard:
-                self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']}")
-            return leaderboard
-            
-        except Exception as e:
-            self.logger.error(f"Leaderboard parsing error: {e}")
-            try:
-                if len(self.driver.window_handles) > 1:
-                    self.driver.close()
-                self.driver.switch_to.window(self.driver.window_handles[0])
-            except:
-                pass
+    """UPDATED leaderboard parsing for new HTML structure"""
+    try:
+        if not self.is_browser_alive():
             return None
+        
+        original_window = self.driver.current_window_handle
+        self.driver.execute_script("window.open('https://adsha.re/ten', '_blank')")
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+        
+        time.sleep(3)
+        
+        soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+        leaderboard = []
+        
+        # Find all leaderboard entries (both top 3 styled and regular ones)
+        leaderboard_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x and 'margin:5px auto' in x)
+        
+        for i, div in enumerate(leaderboard_divs[:10]):  # Top 10 only
+            try:
+                text = div.get_text(strip=True)
+                
+                # Extract user ID - new format: "#4242 - 500 Visitors" or "#4194 / Surfed: 741"
+                user_match = re.search(r'#(\d+)', text)
+                user_id = int(user_match.group(1)) if user_match else None
+                
+                # Extract total surfed - look for "Surfed in 3 Days:" or "Surfed:"
+                surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
+                if not surfed_match:
+                    surfed_match = re.search(r'Surfed:\s*([\d,]+)', text)
+                
+                total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
+                
+                # Extract today's credits - look for "T: XXXX" pattern
+                today_match = re.search(r'T:\s*(\d+)', text)
+                today_credits = int(today_match.group(1)) if today_match else 0
+                
+                # Extract yesterday and day before for completeness
+                yesterday_match = re.search(r'Y:\s*(\d+)', text)
+                day_before_match = re.search(r'DB:\s*(\d+)', text)
+                
+                leaderboard.append({
+                    'rank': i + 1,
+                    'user_id': user_id,
+                    'total_surfed': total_surfed,
+                    'today_credits': today_credits,
+                    'yesterday_credits': int(yesterday_match.group(1)) if yesterday_match else 0,
+                    'day_before_credits': int(day_before_match.group(1)) if day_before_match else 0,
+                    'is_me': user_id == 4242  # Keep hardcoded ID
+                })
+                
+            except Exception as e:
+                self.logger.warning(f"Error parsing leaderboard entry {i+1}: {e}")
+                continue
+        
+        self.driver.close()
+        self.driver.switch_to.window(original_window)
+        
+        self.state['last_leaderboard_check'] = time.time()
+        self.state['leaderboard'] = leaderboard
+        self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
+        
+        if leaderboard:
+            self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']} total surfed")
+        return leaderboard
+        
+    except Exception as e:
+        self.logger.error(f"Leaderboard parsing error: {e}")
+        try:
+            if len(self.driver.window_handles) > 1:
+                self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+        except:
+            pass
+        return None
 
     def get_competitive_target(self):
         """Enhanced competitive target calculation"""
