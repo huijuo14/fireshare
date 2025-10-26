@@ -270,7 +270,6 @@ class UltimateSymbolSolver:
             
         try:
             page_state = self.detect_page_state()
-            #self.logger.info(f"Page state detected: {page_state}")
             
             if page_state == "BROWSER_DEAD":
                 self.logger.error("Browser confirmed dead - restarting...")
@@ -598,7 +597,6 @@ class UltimateSymbolSolver:
             # Wait for elements to appear
             if not self.wait_for_elements(CONFIG['element_wait_time']):
                 if self.state['element_not_found_count'] >= CONFIG['refresh_after_failures']:
-                    #self.logger.info(f"{self.state['element_not_found_count']} consecutive element failures - refreshing page...")
                     self.send_telegram(f"🔄 {self.state['element_not_found_count']} element failures - refreshing page")
                     self.driver.get("https://adsha.re/surf")
                     WebDriverWait(self.driver, 15).until(
@@ -634,7 +632,6 @@ class UltimateSymbolSolver:
                         )
                         return True
                     except TimeoutException:
-                        #self.logger.info("Elements didn't appear within 2 seconds")
                         return False
                 else:
                     # Click failed due to stale element, page was refreshed
@@ -670,7 +667,6 @@ class UltimateSymbolSolver:
             )
             
             self.state['element_not_found_count'] = 0
-            #self.logger.info("Game elements found successfully")
             return True
             
         except TimeoutException:
@@ -738,61 +734,61 @@ class UltimateSymbolSolver:
         
             # Find all leaderboard entries (both top 3 styled and regular ones)
             leaderboard_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x and 'margin:5px auto' in x)
-        
+
             for i, div in enumerate(leaderboard_divs[:10]):  # Top 10 only
-               try:
-                   text = div.get_text(strip=True)
+                try:
+                    text = div.get_text(strip=True)
                 
-                   # Extract user ID - new format: "#4242 - 500 Visitors" or "#4194 / Surfed: 741"
-                   user_match = re.search(r'#(\d+)', text)
-                   user_id = int(user_match.group(1)) if user_match else None
+                    # Extract user ID - new format: "#4242 - 500 Visitors" or "#4194 / Surfed: 741"
+                    user_match = re.search(r'#(\d+)', text)
+                    user_id = int(user_match.group(1)) if user_match else None
                 
-                   # Extract total surfed - look for "Surfed in 3 Days:" or "Surfed:"
-                   surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
-                   if not surfed_match:
-                       surfed_match = re.search(r'Surfed:\s*([\d,]+)', text)
+                    # Extract total surfed - look for "Surfed in 3 Days:" or "Surfed:"
+                    surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
+                    if not surfed_match:
+                        surfed_match = re.search(r'Surfed:\s*([\d,]+)', text)
                 
-                   total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
+                    total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
                 
-                   # Extract today's credits - look for "T: XXXX" pattern
-                   today_match = re.search(r'T:\s*(\d+)', text)
-                   today_credits = int(today_match.group(1)) if today_match else 0
+                    # Extract today's credits - look for "T: XXXX" pattern
+                    today_match = re.search(r'T:\s*(\d+)', text)
+                    today_credits = int(today_match.group(1)) if today_match else 0
                 
-                   # Extract yesterday and day before for completeness
-                   yesterday_match = re.search(r'Y:\s*(\d+)', text)
-                   day_before_match = re.search(r'DB:\s*(\d+)', text)
+                    # Extract yesterday and day before for completeness
+                    yesterday_match = re.search(r'Y:\s*(\d+)', text)
+                    day_before_match = re.search(r'DB:\s*(\d+)', text)
                 
-                   leaderboard.append({
-                       'rank': i + 1,
-                       'user_id': user_id,
-                       'total_surfed': total_surfed,
-                       'today_credits': today_credits,
-                       'yesterday_credits': int(yesterday_match.group(1)) if yesterday_match else 0,
-                       'day_before_credits': int(day_before_match.group(1)) if day_before_match else 0,
-                       'is_me': user_id == 4242  # Keep hardcoded ID
-                   })
+                    leaderboard.append({
+                        'rank': i + 1,
+                        'user_id': user_id,
+                        'total_surfed': total_surfed,
+                        'today_credits': today_credits,
+                        'yesterday_credits': int(yesterday_match.group(1)) if yesterday_match else 0,
+                        'day_before_credits': int(day_before_match.group(1)) if day_before_match else 0,
+                        'is_me': user_id == 4242  # Keep hardcoded ID
+                    })
                 
-               except Exception as e:
-                   self.logger.warning(f"Error parsing leaderboard entry {i+1}: {e}")
-                   continue
+                except Exception as e:
+                    self.logger.warning(f"Error parsing leaderboard entry {i+1}: {e}")
+                    continue
+
+            self.driver.close()
+            self.driver.switch_to.window(original_window)
+
+            self.state['last_leaderboard_check'] = time.time()
+            self.state['leaderboard'] = leaderboard
+            self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
+
+            if leaderboard:
+                self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']} total surfed")
+            return leaderboard
         
-           self.driver.close()
-           self.driver.switch_to.window(original_window)
-        
-           self.state['last_leaderboard_check'] = time.time()
-           self.state['leaderboard'] = leaderboard
-           self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
-        
-           if leaderboard:
-               self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']} total surfed")
-           return leaderboard
-        
-       except Exception as e:
-           self.logger.error(f"Leaderboard parsing error: {e}")
-           try:
-               if len(self.driver.window_handles) > 1:
-                   self.driver.close()
-               self.driver.switch_to.window(self.driver.window_handles[0])
+        except Exception as e:
+            self.logger.error(f"Leaderboard parsing error: {e}")
+            try:
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
             except:
                 pass
             return None
@@ -933,8 +929,6 @@ class UltimateSymbolSolver:
         """SMART failure handling"""
         current_fails = self.state['consecutive_fails']
         element_fails = self.state['element_not_found_count']
-        
-        #self.logger.info(f"Consecutive fails: {current_fails}, Element fails: {element_fails}")
         
         if not self.is_browser_alive():
             self.logger.error("Browser dead - restarting with login...")
