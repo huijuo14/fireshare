@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AdShare Symbol Game Solver - ULTIMATE STABLE EDITION
-Fixed version with 4-failure threshold and removed detailed command
+FIXED VERSION: Critical browser death & login recovery fix - ALL FEATURES
 """
 
 import os
@@ -34,8 +34,8 @@ CONFIG = {
     'max_delay': 2.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
-    'refresh_page_after_failures': 7,
-    'browser_restart_after_failures': 10,
+    'refresh_page_after_failures': 4,
+    'browser_restart_after_failures': 8,
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
@@ -152,13 +152,16 @@ class UltimateSymbolSolver:
 
     # ==================== ENHANCED BROWSER MANAGEMENT ====================
     def is_browser_alive(self):
-        """Enhanced browser health check"""
+        """ULTRA-RELIABLE browser health check"""
         try:
             if not self.driver:
                 return False
-            self.driver.current_url  # More reliable check
+            # Multiple checks to ensure browser is truly alive
+            self.driver.current_url
+            self.driver.title
             return True
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Browser health check failed: {e}")
             return False
 
     def setup_firefox(self):
@@ -200,23 +203,36 @@ class UltimateSymbolSolver:
             return False
 
     def restart_browser(self):
-        """Enhanced browser restart with better cleanup"""
+        """ENHANCED browser restart with PROPER login recovery"""
         try:
             if self.driver:
                 try:
                     self.driver.quit()
                 except:
                     pass
-            time.sleep(3)  # Longer delay for clean restart
-            gc.collect()  # Force garbage collection
-            return self.setup_firefox()
+            time.sleep(3)
+            gc.collect()
+            
+            # CRITICAL FIX: Reset login state when restarting browser
+            self.state['is_logged_in'] = False
+            self.state['consecutive_fails'] = 0
+            
+            success = self.setup_firefox()
+            if success:
+                self.logger.info("Browser restart successful - login required")
+                # Force fresh login after restart
+                login_success = self.force_login()
+                if login_success:
+                    self.state['is_logged_in'] = True
+                    return True
+            return False
         except Exception as e:
             self.logger.error(f"Browser restart failed: {e}")
             return False
 
-    # ==================== PAGE STATE DETECTION SYSTEM ====================
+    # ==================== CRITICAL FIX: PAGE STATE DETECTION ====================
     def detect_page_state(self):
-        """Enhanced page state detection"""
+        """ULTRA-RELIABLE page state detection with browser death check"""
         try:
             if not self.is_browser_alive():
                 return "BROWSER_DEAD"
@@ -224,12 +240,9 @@ class UltimateSymbolSolver:
             current_url = self.driver.current_url.lower()
             page_source = self.driver.page_source.lower()
 
-             # ▼▼▼ ADD THIS LINE RIGHT HERE ▼▼▼
-            if "adsha.re/login" in current_url:
-                return "LOGIN_REQUIRED"
-        # ▲▲▲ ADD THIS LINE RIGHT HERE ▲▲▲  
-            
-            if "login" in current_url or "signin" in current_url:
+            # CRITICAL FIX: Check for login page FIRST
+            if "adsha.re/login" in current_url or "login" in current_url or "signin" in current_url:
+                self.state['is_logged_in'] = False  # Reset login state
                 return "LOGIN_REQUIRED"
             elif "surf" in current_url and "svg" in page_source:
                 return "GAME_ACTIVE"
@@ -246,10 +259,10 @@ class UltimateSymbolSolver:
                 
         except Exception as e:
             self.logger.error(f"Page state detection error: {e}")
-            return "DETECTION_ERROR"
+            return "BROWSER_DEAD"  # Assume browser is dead on any error
 
     def ensure_correct_page(self):
-        """Ensure we're on the correct page with auto-correction"""
+        """ENHANCED page correction with PROPER login handling"""
         if not self.is_browser_alive():
             self.logger.error("Browser dead during page check")
             return False
@@ -259,12 +272,15 @@ class UltimateSymbolSolver:
             self.logger.info(f"Page state detected: {page_state}")
             
             if page_state == "BROWSER_DEAD":
-                return False
+                self.logger.error("Browser confirmed dead - restarting...")
+                return self.restart_browser()
             elif page_state == "LOGIN_REQUIRED":
-                self.logger.info("Login page detected - handling login...")
-                if not self.state['is_logged_in']:
-                    return self.force_login()
-                return self.state['is_logged_in']
+                self.logger.info("Login required - forcing login...")
+                self.state['is_logged_in'] = False
+                if self.force_login():
+                    self.state['is_logged_in'] = True
+                    return True
+                return False
             elif page_state == "GAME_ACTIVE":
                 return True
             elif page_state == "GAME_LOADING":
@@ -288,6 +304,14 @@ class UltimateSymbolSolver:
         except Exception as e:
             self.logger.error(f"Page correction error: {e}")
             return False
+
+    def ensure_logged_in(self):
+        """Enhanced login verification"""
+        if not self.is_browser_alive():
+            self.logger.error("Browser not alive")
+            return False
+        
+        return self.ensure_correct_page()
 
     # ==================== ULTIMATE LOGIN SYSTEM ====================
     def force_login(self):
@@ -427,27 +451,14 @@ class UltimateSymbolSolver:
                 self.send_telegram("✅ <b>ULTIMATE Login Successful!</b>")
                 return True
             else:
-                if page_state == "LOGIN_REQUIRED":
-                    self.logger.error("Login failed - still on login page")
-                    self.send_telegram("❌ Login failed - still on login page")
-                    return False
-                else:
-                    self.logger.info("Login may need verification, continuing...")
-                    self.state['is_logged_in'] = True
-                    return True
+                self.logger.error(f"Login failed - current state: {page_state}")
+                self.send_telegram(f"❌ Login failed - state: {page_state}")
+                return False
                 
         except Exception as e:
             self.logger.error(f"Login error: {e}")
             self.send_telegram(f"❌ Login error: {str(e)}")
             return False
-
-    def ensure_logged_in(self):
-        """Enhanced login verification"""
-        if not self.is_browser_alive():
-            self.logger.error("Browser not alive")
-            return False
-        
-        return self.ensure_correct_page()
 
     # ==================== ENHANCED GAME SOLVING ====================
     def smart_delay(self):
@@ -558,20 +569,22 @@ class UltimateSymbolSolver:
         return None
 
     def solve_symbol_game(self):
-        """Enhanced main game solving logic"""
+        """ENHANCED main game solving with PROPER error recovery"""
         if not self.state['is_running']:
             return False
         
+        # CRITICAL FIX: Always check browser health first
         if not self.is_browser_alive():
             self.logger.error("Browser dead during game solving")
+            self.state['consecutive_fails'] += 1
             return False
             
         try:
-            # Enhanced page verification - only check if we have multiple failures
-            if self.state['consecutive_fails'] >= 4:
-                if not self.ensure_correct_page():
-                    self.logger.error("Cannot ensure correct page status")
-                    return False
+            # Enhanced page verification
+            if not self.ensure_correct_page():
+                self.logger.error("Cannot ensure correct page status")
+                self.state['consecutive_fails'] += 1
+                return False
             
             # Enhanced game detection with multiple strategies
             try:
@@ -620,6 +633,7 @@ class UltimateSymbolSolver:
             
         except Exception as e:
             self.logger.error(f"Solver error: {e}")
+            self.state['consecutive_fails'] += 1
             return False
 
     # ==================== PERFORMANCE TRACKING ====================
@@ -869,41 +883,52 @@ class UltimateSymbolSolver:
         self.send_telegram(f"🏆 <b>Auto-compete mode activated</b>{margin_text} - Targeting #1 position")
         return True
 
-    # ==================== ULTIMATE ERROR HANDLING ====================
+    # ==================== CRITICAL FIX: FAILURE HANDLING ====================
     def handle_consecutive_failures(self):
-        """ULTIMATE progressive failure handling - 4 FAILURES BEFORE REDIRECT"""
-        self.state['consecutive_fails'] += 1
+        """FIXED progressive failure handling"""
         current_fails = self.state['consecutive_fails']
         
         self.logger.info(f"Consecutive failures: {current_fails}/{CONFIG['max_consecutive_failures']}")
         
+        # CRITICAL FIX: Check browser health FIRST
         if not self.is_browser_alive():
-            self.logger.error("Browser dead - restarting...")
-            self.send_telegram("🔄 Browser dead - restarting...")
-            self.restart_browser()
+            self.logger.error("Browser dead - restarting with login...")
+            self.send_telegram("🔄 Browser dead - restarting with fresh login...")
+            if self.restart_browser():
+                self.state['consecutive_fails'] = 0
             return
         
-        # Progressive recovery system - WAIT FOR 4 FAILURES BEFORE REDIRECT
-        if current_fails >= 4:  # CHANGED: Wait for 4 failures before redirect
-            self.logger.info("4 consecutive failures - redirecting to surf...")
-            self.send_telegram(f"🔄 4 consecutive failures - redirecting to surf...")
+        # Progressive recovery system
+        if current_fails >= CONFIG['refresh_page_after_failures']:
+            self.logger.info(f"{current_fails} consecutive failures - checking page state...")
+            page_state = self.detect_page_state()
             
-            try:
-                self.driver.get("https://adsha.re/surf")
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                self.smart_delay()
-                self.state['consecutive_fails'] = 0
-                self.send_telegram("✅ Page refresh successful!")
-            except Exception as e:
-                self.logger.error(f"Page refresh failed: {e}")
+            if page_state == "LOGIN_REQUIRED":
+                self.logger.info("Login required - forcing login...")
+                self.send_telegram("🔐 Login required - attempting login...")
+                if self.force_login():
+                    self.state['consecutive_fails'] = 0
+                    self.send_telegram("✅ Login successful after failure!")
+                return
+            else:
+                self.logger.info("Refreshing surf page...")
+                self.send_telegram(f"🔄 {current_fails} failures - refreshing page...")
+                
+                try:
+                    self.driver.get("https://adsha.re/surf")
+                    WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    self.smart_delay()
+                    self.state['consecutive_fails'] = 0
+                except Exception as e:
+                    self.logger.error(f"Page refresh failed: {e}")
         
         elif current_fails >= CONFIG['browser_restart_after_failures']:
             self.logger.warning("Multiple failures - restarting browser...")
-            self.send_telegram("🔄 Multiple failures detected - restarting browser...")
-            self.restart_browser()
-            self.state['consecutive_fails'] = 0
+            self.send_telegram("🔄 Multiple failures - restarting browser...")
+            if self.restart_browser():
+                self.state['consecutive_fails'] = 0
         
         elif current_fails >= CONFIG['max_consecutive_failures']:
             self.logger.error("CRITICAL: Too many failures! Stopping...")
@@ -912,20 +937,20 @@ class UltimateSymbolSolver:
 
     # ==================== ULTIMATE SOLVER LOOP ====================
     def solver_loop(self):
-        """ULTIMATE solving loop with enhanced features"""
+        """FIXED solving loop with PROPER error recovery"""
         self.logger.info("Starting ULTIMATE solver loop...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
         
-        # Enhanced browser setup
+        # Enhanced browser setup with forced login
         if not self.driver:
             if not self.setup_firefox():
                 self.logger.error("CRITICAL: Cannot start - Firefox failed")
                 self.stop()
                 return
         
-        # Enhanced initial login
-        if not self.ensure_logged_in():
+        # CRITICAL FIX: Always force initial login
+        if not self.force_login():
             self.logger.error("CRITICAL: Initial login failed")
             self.stop()
             return
@@ -935,23 +960,6 @@ class UltimateSymbolSolver:
         
         while self.state['is_running'] and self.state['consecutive_fails'] < CONFIG['max_consecutive_failures']:
             try:
-                # Enhanced browser health monitoring
-                if not self.is_browser_alive():
-                    self.logger.warning("Browser dead - restarting...")
-                    if not self.restart_browser():
-                        self.logger.error("Browser restart failed")
-                        self.stop()
-                        break
-                    # With this DIRECT login approach:
-                    self.logger.info("Forcing login after browser restart...")
-                    if not self.force_login():
-                        self.logger.error("Force login after restart failed")
-                        self.stop()
-                        break
-                else:
-                    self.state['is_logged_in'] = True
-                    self.logger.info("Login successful after restart!")
-                
                 # Enhanced memory management
                 if cycle_count % 50 == 0:
                     gc.collect()
@@ -964,8 +972,8 @@ class UltimateSymbolSolver:
                 game_solved = self.solve_symbol_game()
                 
                 if game_solved:
-                    self.state['consecutive_fails'] = 0
-                    # Already waited 30 seconds in solve_symbol_game
+                    # Success - continue normally
+                    pass
                 else:
                     self.handle_consecutive_failures()
                     time.sleep(5)
@@ -1057,7 +1065,7 @@ class UltimateTelegramBot:
             return []
     
     def process_message(self, update):
-        """Enhanced message processing - REMOVED /detailed COMMAND"""
+        """Enhanced message processing - ALL COMMANDS INCLUDED"""
         if 'message' not in update:
             return
         
@@ -1112,7 +1120,7 @@ class UltimateTelegramBot:
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
         elif text.startswith('/help'):
             response = """
-🤖 <b>ULTIMATE AdShare Solver</b>
+🤖 <b>ULTIMATE AdShare Solver - FIXED VERSION</b>
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1133,14 +1141,20 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
-<b>Features:</b>
-✅ Working Login System
-✅ Page State Detection  
-✅ Progressive Error Recovery
-✅ uBlock Origin Integration
-✅ Performance Tracking
-✅ Enhanced Competition
-✅ Memory Optimization
+<b>CRITICAL FIXES:</b>
+✅ Browser death detection & recovery
+✅ No more redirect loops  
+✅ Proper login state management
+✅ Enhanced error handling
+✅ Memory optimization
+
+<b>All Features Working:</b>
+✅ Symbol matching algorithm
+✅ Leaderboard competition  
+✅ Performance tracking
+✅ Telegram integration
+✅ uBlock Origin
+✅ Progressive error recovery
             """
         
         if response:
@@ -1162,5 +1176,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("ULTIMATE AdShare Solver started!")
+    bot.logger.info("ULTIMATE AdShare Solver - FIXED VERSION with ALL FEATURES started!")
     bot.handle_updates()
