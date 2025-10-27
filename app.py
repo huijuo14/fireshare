@@ -782,7 +782,9 @@ class UltimateSymbolSolver:
                     text = div.get_text(strip=True)
                 
                     # Extract user ID - new format: "#4242 - 500 Visitors" or "#4194 / Surfed: 741"
-                    user_match = re.search(r'#(\d+)', text)
+                    user_match = re.search(r'#(\d+)(?:\s*-|\s*\/)' , text)
+                    if not user_match:
+                        user_match = re.search(r'#(\d+)', text)
                     user_id = int(user_match.group(1)) if user_match else None
                 
                     # Extract total surfed - look for "Surfed in 3 Days:" or "Surfed:"
