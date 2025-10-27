@@ -520,7 +520,7 @@ class UltimateShapeSolver:
                 return False
             
             html = timer.get_attribute('innerHTML')
-            current_hash = self.hash_code(html)
+            current_hash = self.hashCode(html)
             
             # Only process if content changed
             if current_hash == self.state['last_question_hash']:
