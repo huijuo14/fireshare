@@ -2,7 +2,7 @@
 """
 AdShare Symbol Game Solver - PERFECT SHAPE MATCHING EDITION
 WITH WRONG CLICK DETECTION AND FIXED TARGET CALCULATION
-FIXED LOGIN AND LEADERBOARD
+FIXED LOGIN AND LEADERBOARD - USING ORIGINAL WORKING LOGIC
 """
 
 import os
@@ -172,7 +172,7 @@ class UltimateShapeSolver:
             return False
 
     def setup_firefox(self):
-        """ULTIMATE Firefox setup with uBlock Origin"""
+        """ULTIMATE Firefox setup with uBlock Origin - EXACT SAME AS FIRST SCRIPT"""
         try:
             options = Options()
             options.add_argument("--headless")
@@ -196,13 +196,11 @@ class UltimateShapeSolver:
             service = Service('/usr/local/bin/geckodriver', log_path=os.devnull)
             self.driver = webdriver.Firefox(service=service, options=options)
             
-            # Install uBlock Origin for performance
-            ublock_path = '/app/ublock_origin-1.56.0.xpi'
+            # Install uBlock Origin for performance - EXACT SAME PATH AS FIRST SCRIPT
+            ublock_path = '/app/ublock.xpi'
             if os.path.exists(ublock_path):
-                self.driver.install_addon(ublock_path, temporary=True)
-                self.logger.info("✅ uBlock Origin installed for enhanced performance")
-            else:
-                self.logger.warning("❌ uBlock Origin extension not found, continuing without ad blocker")
+                self.driver.install_addon(ublock_path, temporary=False)
+                self.logger.info("uBlock Origin installed for enhanced performance")
             
             self.logger.info("ULTIMATE Firefox started successfully!")
             return True
@@ -238,30 +236,12 @@ class UltimateShapeSolver:
             self.logger.error(f"Browser restart failed: {e}")
             return False
 
-    # ==================== FIXED LOGIN FUNCTION ====================
+    # ==================== EXACT SAME LOGIN FUNCTION FROM FIRST WORKING SCRIPT ====================
     def force_login(self):
-        """FIXED WORKING LOGIN - Simplified and reliable"""
+        """ULTIMATE WORKING LOGIN - EXACT COPY FROM FIRST SCRIPT"""
         try:
-            self.logger.info("FIXED LOGIN: Attempting login...")
+            self.logger.info("ULTIMATE LOGIN: Attempting login...")
             
-            # Go directly to surf page first to check if already logged in
-            self.driver.get("https://adsha.re/surf")
-            time.sleep(3)
-            
-            # Check if we're already logged in
-            current_url = self.driver.current_url.lower()
-            if "surf" in current_url:
-                self.logger.info("Already logged in - checking game elements...")
-                try:
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "svg"))
-                    )
-                    self.state['is_logged_in'] = True
-                    return True
-                except:
-                    pass
-            
-            # If not logged in, go to login page
             login_url = "https://adsha.re/login"
             self.driver.get(login_url)
             
@@ -271,131 +251,131 @@ class UltimateShapeSolver:
             
             self.smart_delay()
             
-            # FIXED: Use simpler, more reliable element finding
-            try:
-                # Find email field - try multiple selectors
-                email_selectors = [
-                    "input[name='mail']",
-                    "input[type='email']",
-                    "input[placeholder*='email' i]",
-                    "input[placeholder*='mail' i]"
-                ]
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            form = soup.find('form', {'name': 'login'})
+            if not form:
+                self.logger.error("LOGIN: No login form found")
+                return False
+            
+            password_field_name = None
+            for field in form.find_all('input'):
+                field_name = field.get('name', '')
+                field_value = field.get('value', '')
                 
-                email_field = None
-                for selector in email_selectors:
-                    try:
-                        email_field = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        if email_field:
-                            break
-                    except:
-                        continue
-                
-                if not email_field:
-                    self.logger.error("Could not find email field")
-                    return False
-                
-                email_field.clear()
-                email_field.send_keys(CONFIG['email'])
-                self.logger.info("✅ Email entered successfully")
-                
-                self.smart_delay()
-                
-                # Find password field - try multiple selectors
-                password_selectors = [
-                    "input[type='password']",
-                    "input[name*='pass' i]",
-                    "input[placeholder*='password' i]",
-                    "input[placeholder*='pass' i]"
-                ]
-                
-                password_field = None
-                for selector in password_selectors:
-                    try:
-                        password_field = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        if password_field:
-                            break
-                    except:
-                        continue
-                
-                if not password_field:
-                    self.logger.error("Could not find password field")
-                    return False
-                
-                password_field.clear()
-                password_field.send_keys(CONFIG['password'])
-                self.logger.info("✅ Password entered successfully")
-                
-                self.smart_delay()
-                
-                # Find and click login button
-                login_selectors = [
-                    "button[type='submit']",
-                    "input[type='submit']",
-                    "button:contains('Login')",
-                    "button:contains('Sign')",
-                    "input[value*='Login']",
-                    "input[value*='Sign']"
-                ]
-                
-                login_clicked = False
-                for selector in login_selectors:
-                    try:
-                        # Try CSS selector first
-                        login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        if login_btn.is_displayed() and login_btn.is_enabled():
-                            login_btn.click()
-                            self.logger.info(f"✅ Login button clicked with selector: {selector}")
-                            login_clicked = True
-                            break
-                    except:
-                        continue
-                
-                if not login_clicked:
-                    # Try to find any button and click it
-                    try:
-                        buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                        for button in buttons:
-                            if button.is_displayed() and button.is_enabled():
-                                button.click()
-                                self.logger.info("✅ Login button clicked via generic button")
-                                login_clicked = True
-                                break
-                    except:
-                        pass
-                
-                # Wait for login to process
-                time.sleep(8)
-                
-                # Navigate to surf page to verify login
-                self.driver.get("https://adsha.re/surf")
-                time.sleep(5)
-                
-                # Check if login was successful
-                current_url = self.driver.current_url.lower()
-                if "surf" in current_url:
-                    try:
-                        # Wait for game elements to appear
-                        WebDriverWait(self.driver, 15).until(
-                            EC.presence_of_element_located((By.TAG_NAME, "svg"))
-                        )
-                        self.logger.info("✅ FIXED LOGIN: Login successful!")
-                        self.state['is_logged_in'] = True
-                        self.send_telegram("✅ <b>FIXED Login Successful!</b>")
-                        return True
-                    except TimeoutException:
-                        self.logger.warning("Game elements not found after login, but might still be logged in")
-                        self.state['is_logged_in'] = True
-                        return True
-                else:
-                    self.logger.error(f"Login failed - redirected to: {current_url}")
-                    return False
-                    
-            except Exception as e:
-                self.logger.error(f"Login form error: {e}")
+                if field_value == 'Password' and field_name != 'mail' and field_name:
+                    password_field_name = field_name
+                    break
+            
+            if not password_field_name:
+                self.logger.error("LOGIN: No password field found")
+                return False
+            
+            self.logger.info(f"Password field: {password_field_name}")
+            
+            email_selectors = [
+                "input[name='mail']",
+                "input[type='email']",
+                "input[placeholder*='email' i]",
+                "input[id*='email' i]",
+                "input[class*='email' i]"
+            ]
+            
+            email_filled = False
+            for selector in email_selectors:
+                try:
+                    email_field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    email_field.clear()
+                    email_field.send_keys(CONFIG['email'])
+                    self.logger.info("Email entered successfully")
+                    email_filled = True
+                    break
+                except:
+                    continue
+            
+            if not email_filled:
+                self.logger.error("Could not fill email field")
+                return False
+            
+            self.smart_delay()
+            
+            password_selectors = [
+                f"input[name='{password_field_name}']",
+                "input[type='password']",
+                "input[placeholder*='password' i]",
+                "input[placeholder*='pass' i]"
+            ]
+            
+            password_filled = False
+            for selector in password_selectors:
+                try:
+                    password_field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    password_field.clear()
+                    password_field.send_keys(CONFIG['password'])
+                    self.logger.info("Password entered successfully")
+                    password_filled = True
+                    break
+                except:
+                    continue
+            
+            if not password_filled:
+                return False
+            
+            self.smart_delay()
+            
+            login_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button",
+                "input[value*='Login']",
+                "input[value*='Sign']",
+                "button[class*='login']",
+                "button[class*='submit']"
+            ]
+            
+            login_clicked = False
+            for selector in login_selectors:
+                try:
+                    login_btn = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if login_btn.is_displayed() and login_btn.is_enabled():
+                        login_btn.click()
+                        self.logger.info("Login button clicked successfully")
+                        login_clicked = True
+                        break
+                except:
+                    continue
+            
+            if not login_clicked:
+                try:
+                    form_element = self.driver.find_element(By.CSS_SELECTOR, "form[name='login']")
+                    form_element.submit()
+                    self.logger.info("Form submitted successfully")
+                    login_clicked = True
+                except:
+                    pass
+            
+            self.smart_delay()
+            time.sleep(8)
+            
+            self.driver.get("https://adsha.re/surf")
+            self.smart_delay()
+            
+            current_url = self.driver.current_url
+            page_state = self.detect_page_state()
+            
+            if page_state == "GAME_ACTIVE" or page_state == "GAME_LOADING":
+                self.logger.info("ULTIMATE LOGIN: Login successful!")
+                self.state['is_logged_in'] = True
+                self.send_telegram("✅ <b>ULTIMATE Login Successful!</b>")
+                return True
+            else:
+                self.logger.error(f"Login failed - current state: {page_state}")
+                self.send_telegram(f"❌ Login failed - state: {page_state}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Login process error: {e}")
+            self.logger.error(f"Login error: {e}")
             self.send_telegram(f"❌ Login error: {str(e)}")
             return False
 
@@ -886,95 +866,81 @@ class UltimateShapeSolver:
         minutes = int((seconds % 3600) // 60)
         return f"{hours}h {minutes}m"
 
-    # ==================== FIXED LEADERBOARD SCRAPING ====================
+    # ==================== EXACT SAME LEADERBOARD PARSING FROM FIRST SCRIPT ====================
     def parse_leaderboard(self):
-        """FIXED leaderboard parsing - simplified and reliable"""
+        """UPDATED leaderboard parsing for new HTML structure - EXACT COPY FROM FIRST SCRIPT"""
         try:
-            if not self.is_browser_alive() or not self.state['is_logged_in']:
-                self.logger.error("Browser not alive or not logged in for leaderboard")
+            if not self.is_browser_alive():
                 return None
-            
-            self.logger.info("Fetching leaderboard...")
-            
-            # Open leaderboard in same tab (more reliable)
-            self.driver.get("https://adsha.re/ten")
-            time.sleep(5)
-            
-            # Check if we're still logged in
-            current_url = self.driver.current_url.lower()
-            if "login" in current_url:
-                self.logger.error("Not logged in when trying to fetch leaderboard")
-                self.state['is_logged_in'] = False
-                # Go back to surf page
-                self.driver.get("https://adsha.re/surf")
-                return None
-            
+        
+            original_window = self.driver.current_window_handle
+            self.driver.execute_script("window.open('https://adsha.re/ten', '_blank')")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+        
+            time.sleep(3)
+        
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             leaderboard = []
-            
-            # FIXED: Look for leaderboard entries with more flexible approach
-            entries = soup.find_all('div', style=lambda x: x and 'width' in x and 'margin' in x)
-            
-            for i, entry in enumerate(entries[:10]):  # Top 10 only
+        
+            # Find all leaderboard entries (both top 3 styled and regular ones)
+            leaderboard_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x and 'margin:5px auto' in x)
+
+            for i, div in enumerate(leaderboard_divs[:10]):  # Top 10 only
                 try:
-                    text = entry.get_text(strip=True)
-                    
-                    # Extract user ID - more flexible pattern
-                    user_match = re.search(r'#(\d+)', text)
+                    text = div.get_text(strip=True)
+                
+                    # Extract user ID - new format: "#4242 - 500 Visitors" or "#4194 / Surfed: 741"
+                    user_match = re.search(r'#(\d+)(?:\s*-|\s*\/)' , text)
+                    if not user_match:
+                        user_match = re.search(r'#(\d+)', text)
                     user_id = int(user_match.group(1)) if user_match else None
-                    
-                    if not user_id:
-                        continue
-                    
-                    # Extract total surfed
-                    total_match = re.search(r'Surfed[^:]*:\s*([\d,]+)', text)
-                    total_surfed = int(total_match.group(1).replace(',', '')) if total_match else 0
-                    
-                    # Extract today's credits
+                
+                    # Extract total surfed - look for "Surfed in 3 Days:" or "Surfed:"
+                    surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
+                    if not surfed_match:
+                        surfed_match = re.search(r'Surfed:\s*([\d,]+)', text)
+                
+                    total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
+                
+                    # Extract today's credits - look for "T: XXXX" pattern
                     today_match = re.search(r'T:\s*(\d+)', text)
                     today_credits = int(today_match.group(1)) if today_match else 0
-                    
-                    # Extract yesterday credits
+                
+                    # Extract yesterday and day before for completeness
                     yesterday_match = re.search(r'Y:\s*(\d+)', text)
-                    yesterday_credits = int(yesterday_match.group(1)) if yesterday_match else 0
-                    
+                    day_before_match = re.search(r'DB:\s*(\d+)', text)
+                
                     leaderboard.append({
                         'rank': i + 1,
                         'user_id': user_id,
                         'total_surfed': total_surfed,
                         'today_credits': today_credits,
-                        'yesterday_credits': yesterday_credits,
-                        'is_me': user_id == 4242  # Hardcoded ID
+                        'yesterday_credits': int(yesterday_match.group(1)) if yesterday_match else 0,
+                        'day_before_credits': int(day_before_match.group(1)) if day_before_match else 0,
+                        'is_me': user_id == 4242  # Keep hardcoded ID
                     })
-                    
-                    self.logger.info(f"Leaderboard entry {i+1}: #{user_id} - Total: {total_surfed}, Today: {today_credits}")
-                    
+                
                 except Exception as e:
                     self.logger.warning(f"Error parsing leaderboard entry {i+1}: {e}")
                     continue
-            
-            # Go back to surf page
-            self.driver.get("https://adsha.re/surf")
-            time.sleep(3)
-            
+
+            self.driver.close()
+            self.driver.switch_to.window(original_window)
+
             self.state['last_leaderboard_check'] = time.time()
             self.state['leaderboard'] = leaderboard
             self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
-            
+
             if leaderboard:
-                self.logger.info(f"✅ Leaderboard updated with {len(leaderboard)} entries")
-                if self.state['my_position']:
-                    self.logger.info(f"Your position: #{self.state['my_position']['rank']}")
-            else:
-                self.logger.warning("No leaderboard entries found")
-                
+                self.logger.info(f"Leaderboard updated - Top: #{leaderboard[0]['user_id']} with {leaderboard[0]['total_surfed']} total surfed")
             return leaderboard
-            
+        
         except Exception as e:
             self.logger.error(f"Leaderboard parsing error: {e}")
-            # Try to return to surf page on error
             try:
-                self.driver.get("https://adsha.re/surf")
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
             except:
                 pass
             return None
@@ -1356,8 +1322,8 @@ class UltimateTelegramBot:
 🤖 <b>PERFECT SHAPE MATCHING AdShare Solver</b>
 
 <b>NEW FEATURES:</b>
-✅ FIXED Login - Simplified and reliable
-✅ FIXED Leaderboard - Better parsing
+✅ EXACT SAME LOGIN LOGIC FROM WORKING SCRIPT
+✅ EXACT SAME LEADERBOARD PARSING FROM WORKING SCRIPT  
 ✅ Wrong Click Detection - Alerts on exchange page redirect
 ✅ FIXED #1 Maintenance - Uses (2nd place today + yesterday) + margin as DAILY target
 ✅ Anti-Detection Delays - Random timing for all actions
@@ -1416,5 +1382,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("PERFECT SHAPE MATCHING AdShare Solver - FIXED LOGIN & LEADERBOARD started!")
+    bot.logger.info("PERFECT SHAPE MATCHING AdShare Solver - EXACT WORKING LOGIC COPIED started!")
     bot.handle_updates()
