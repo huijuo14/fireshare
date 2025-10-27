@@ -28,10 +28,10 @@ from bs4 import BeautifulSoup
 CONFIG = {
     'email': "jiocloud90@gmail.com",
     'password': "@Sd2007123",
-    'base_delay': 1.5,
+    'base_delay': 1.7,
     'random_delay': True,
     'min_delay': 0.7,
-    'max_delay': 2.5,
+    'max_delay': 3,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
     'element_wait_time': 5,
