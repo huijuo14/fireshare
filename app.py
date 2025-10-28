@@ -35,7 +35,7 @@ CONFIG = {
     'base_delay': 1.7,
     'random_delay': True,
     'min_delay': 1.5,
-    'max_delay': 3,
+    'max_delay': 3.5,
     'telegram_token': "8225236307:AAF9Y2-CM7TlLDFm2rcTVY6f3SA75j0DFI8",
     'max_consecutive_failures': 15,
     'element_wait_time': 5,
@@ -44,17 +44,8 @@ CONFIG = {
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
-}
-
-# EXACT SAME SYMBOL TYPES AS USERSCRIPT v3.4
-SYMBOL_TYPES = {
-    'CIRCLE': 'circle',
-    'SQUARE': 'square', 
-    'DIAMOND': 'diamond',
-    'ARROW_DOWN': 'arrow_down',
-    'ARROW_LEFT': 'arrow_left',
-    'BACKGROUND_CIRCLE': 'background_circle',
-    'UNKNOWN': 'unknown'
+    'minimum_confidence': 0.90,
+    'max_clicks_per_minute': 20,
 }
 
 class UltimateShapeSolver:
@@ -63,7 +54,7 @@ class UltimateShapeSolver:
         self.telegram_chat_id = None
         self.cookies_file = "/app/cookies.json"
         
-        # Enhanced State Management
+        # Enhanced State Management - EXACT SAME AS USERSCRIPT v3.4
         self.state = {
             'is_running': False,
             'total_solved': 0,
@@ -89,11 +80,23 @@ class UltimateShapeSolver:
             'wrong_click_count': 0,
             'last_wrong_click_time': 0,
             'no_question_count': 0,
-            'consecutive_rounds': 0,
             'click_count': 0,
             'last_click_time': 0,
             'session_start_time': 0,
-            'is_in_cooldown': False
+            'consecutive_rounds': 0,
+            'is_in_cooldown': False,
+            'consecutive_match_fails': 0
+        }
+        
+        # Symbol types - EXACT SAME AS USERSCRIPT v3.4
+        self.SYMBOL_TYPES = {
+            'CIRCLE': 'circle',
+            'SQUARE': 'square', 
+            'DIAMOND': 'diamond',
+            'ARROW_DOWN': 'arrow_down',
+            'ARROW_LEFT': 'arrow_left',
+            'BACKGROUND_CIRCLE': 'background_circle',
+            'UNKNOWN': 'unknown'
         }
         
         self.solver_thread = None
@@ -244,6 +247,8 @@ class UltimateShapeSolver:
             self.state['consecutive_fails'] = 0
             self.state['element_not_found_count'] = 0
             self.state['no_question_count'] = 0
+            self.state['consecutive_match_fails'] = 0
+            self.state['is_in_cooldown'] = False
             
             success = self.setup_firefox()
             if success:
@@ -259,7 +264,7 @@ class UltimateShapeSolver:
 
     # ==================== EXACT SAME LOGIN FUNCTION ====================
     def force_login(self):
-        """ULTIMATE WORKING LOGIN - EXACT COPY FROM FIRST SCRIPT"""
+        """ULTIMATE WORKING LOGIN - EXACT COPY FROM WORKING SCRIPT"""
         try:
             self.logger.info("ULTIMATE LOGIN: Attempting login...")
             
@@ -400,9 +405,9 @@ class UltimateShapeSolver:
             self.send_telegram(f"❌ Login error: {str(e)}")
             return False
 
-    # ==================== EXACT SAME SYMBOL MATCHING LOGIC AS USERSCRIPT v3.4 ====================
+    # ==================== PERFECT SHAPE MATCHING SYSTEM v3.4 ====================
     def smart_delay(self):
-        """Randomized delay between actions for anti-detection"""
+        """Randomized delay between actions for anti-detection - EXACT SAME AS USERSCRIPT"""
         if CONFIG['random_delay']:
             delay = random.uniform(CONFIG['min_delay'], CONFIG['max_delay'])
             self.logger.info(f"⏰ Smart delay: {delay:.2f}s")
@@ -411,23 +416,60 @@ class UltimateShapeSolver:
         time.sleep(delay)
         return delay
 
+    def get_smart_delay(self):
+        """Get intelligent delay with human-like patterns - EXACT SAME AS USERSCRIPT"""
+        if not CONFIG['random_delay']:
+            return CONFIG['base_delay']
+        
+        base = CONFIG['base_delay']
+        random_variation = random.uniform(0, CONFIG['max_delay'] - CONFIG['min_delay'])
+        return base + random_variation
+
+    def is_behavior_suspicious(self):
+        """Advanced rate limiting with behavioral analysis - EXACT SAME AS USERSCRIPT"""
+        now = time.time()
+        time_since_last_click = now - self.state['last_click_time']
+        
+        clicks_per_minute = (self.state['click_count'] / ((now - self.state['session_start_time']) / 60)) if (now - self.state['session_start_time']) > 0 else 0
+        
+        if clicks_per_minute > CONFIG['max_clicks_per_minute']:
+            return True
+        
+        if now - self.state['session_start_time'] > 1800:  # 30 minutes
+            return True
+        
+        return False
+
+    def start_cooldown(self, duration=30000):
+        """Cooldown management - EXACT SAME AS USERSCRIPT"""
+        self.state['is_in_cooldown'] = True
+        self.logger.info(f"😴 Cooldown activated for {duration/1000}s")
+        
+        def end_cooldown():
+            time.sleep(duration / 1000)
+            self.state['is_in_cooldown'] = False
+            self.logger.info("✅ Cooldown ended")
+        
+        threading.Thread(target=end_cooldown, daemon=True).start()
+
+    # ==================== EXACT USERSCRIPT v3.4 SYMBOL DETECTION ====================
     def classify_symbol_type(self, element):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Classify symbol type for both SVG and background images"""
+        """EXACT SAME AS USERSCRIPT v3.4: Classify symbol type for both SVG and background images"""
         if not element:
-            return SYMBOL_TYPES['UNKNOWN']
+            return self.SYMBOL_TYPES['UNKNOWN']
         
         try:
-            # Check if it's a background image element (EXACT SAME LOGIC)
+            # Check if it's a background image element - EXACT SAME LOGIC
             div = element.find_element(By.TAG_NAME, "div") if element else None
             if div:
                 bg_image = div.value_of_css_property('background-image')
                 if bg_image and 'img.gif' in bg_image:
-                    return SYMBOL_TYPES['BACKGROUND_CIRCLE']
+                    return self.SYMBOL_TYPES['BACKGROUND_CIRCLE']
             
-            # Check if it's an SVG element
+            # Check if it's an SVG element - EXACT SAME LOGIC
             svg = element.find_element(By.TAG_NAME, "svg") if element else None
             if not svg:
-                return SYMBOL_TYPES['UNKNOWN']
+                return self.SYMBOL_TYPES['UNKNOWN']
             
             content = svg.get_attribute('innerHTML').lower()
             
@@ -435,33 +477,33 @@ class UltimateShapeSolver:
             if 'circle' in content and 'cx="50"' in content and 'cy="50"' in content:
                 circles = content.count('<circle')
                 if circles >= 2:
-                    return SYMBOL_TYPES['CIRCLE']
+                    return self.SYMBOL_TYPES['CIRCLE']
             
             # Square detection (nested squares) - EXACT SAME LOGIC
             if 'rect x="25" y="25"' in content and 'width="50" height="50"' in content:
                 rects = content.count('<rect')
                 if rects >= 2:
-                    return SYMBOL_TYPES['SQUARE']
+                    return self.SYMBOL_TYPES['SQUARE']
             
             # Diamond detection (rotated squares) - EXACT SAME LOGIC
             if 'transform="matrix(0.7071' in content and '42.4"' in content:
-                return SYMBOL_TYPES['DIAMOND']
+                return self.SYMBOL_TYPES['DIAMOND']
             
             # Arrow down detection (pointing down) - EXACT SAME LOGIC
             if 'polygon' in content and '25 75' in content and '50 25' in content and '75 75' in content:
-                return SYMBOL_TYPES['ARROW_DOWN']
+                return self.SYMBOL_TYPES['ARROW_DOWN']
             
             # Arrow left detection (pointing left) - EXACT SAME LOGIC
             if 'polygon' in content and '25 25' in content and '75 50' in content and '25 75' in content:
-                return SYMBOL_TYPES['ARROW_LEFT']
+                return self.SYMBOL_TYPES['ARROW_LEFT']
             
-            return SYMBOL_TYPES['UNKNOWN']
+            return self.SYMBOL_TYPES['UNKNOWN']
             
         except Exception as e:
-            return SYMBOL_TYPES['UNKNOWN']
+            return self.SYMBOL_TYPES['UNKNOWN']
 
     def compare_symbols(self, question_element, answer_element):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Enhanced symbol comparison with fuzzy matching"""
+        """EXACT SAME AS USERSCRIPT v3.4: Enhanced symbol comparison with fuzzy matching"""
         try:
             question_svg = question_element.find_element(By.TAG_NAME, "svg")
             answer_svg = answer_element.find_element(By.TAG_NAME, "svg")
@@ -469,7 +511,7 @@ class UltimateShapeSolver:
             question_content = question_svg.get_attribute('innerHTML').replace('\s+', ' ').strip()
             answer_content = answer_svg.get_attribute('innerHTML').replace('\s+', ' ').strip()
             
-            # EXACT SAME CLEANING LOGIC
+            # Clean content - EXACT SAME LOGIC
             clean_question = re.sub(r'fill:#[A-F0-9]+', '', question_content, flags=re.IGNORECASE)
             clean_question = re.sub(r'stroke:#[A-F0-9]+', '', clean_question, flags=re.IGNORECASE)
             clean_question = re.sub(r'style="[^"]*"', '', clean_question)
@@ -486,7 +528,7 @@ class UltimateShapeSolver:
             
             # Fuzzy matching for similar symbols - EXACT SAME LOGIC
             similarity = self.calculate_similarity(clean_question, clean_answer)
-            should_match = similarity > 0.90  # Same minimum confidence as userscript
+            should_match = similarity > CONFIG['minimum_confidence']
             
             return {'match': should_match, 'confidence': similarity, 'exact': False}
             
@@ -494,7 +536,7 @@ class UltimateShapeSolver:
             return {'match': False, 'confidence': 0, 'exact': False}
 
     def calculate_similarity(self, str1, str2):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Calculate string similarity for fuzzy matching"""
+        """EXACT SAME AS USERSCRIPT v3.4: Calculate string similarity for fuzzy matching"""
         longer = str1 if len(str1) > len(str2) else str2
         shorter = str2 if len(str1) > len(str2) else str1
         
@@ -505,7 +547,7 @@ class UltimateShapeSolver:
         return (len(longer) - edit_distance) / float(len(longer))
 
     def get_edit_distance(self, a, b):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Levenshtein distance for edit distance calculation"""
+        """EXACT SAME AS USERSCRIPT v3.4: Levenshtein distance for edit distance calculation"""
         if len(a) == 0:
             return len(b)
         if len(b) == 0:
@@ -531,7 +573,7 @@ class UltimateShapeSolver:
         return matrix[len(b)][len(a)]
 
     def find_best_match_v3_4(self, question_element, links):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Find the BEST possible match with high confidence"""
+        """EXACT SAME AS USERSCRIPT v3.4: Find the BEST possible match with high confidence"""
         best_match = None
         highest_confidence = 0
         exact_matches = []
@@ -539,12 +581,12 @@ class UltimateShapeSolver:
         question_type = self.classify_symbol_type(question_element)
         
         for link in links:
+            answer_type = self.classify_symbol_type(link)
+            
+            # CASE 1: Both question and answer are SVGs - use traditional matching
             try:
-                answer_type = self.classify_symbol_type(link)
-                
-                # CASE 1: Both question and answer are SVGs - use traditional matching
-                question_svg = question_element.find_elements(By.TAG_NAME, "svg")
-                answer_svg = link.find_elements(By.TAG_NAME, "svg")
+                question_svg = question_element.find_element(By.TAG_NAME, "svg")
+                answer_svg = link.find_element(By.TAG_NAME, "svg")
                 
                 if question_svg and answer_svg:
                     comparison = self.compare_symbols(question_element, link)
@@ -563,12 +605,16 @@ class UltimateShapeSolver:
                             'exact': False,
                             'matchType': 'svg_fuzzy'
                         }
-                
-                # CASE 2: Question is SVG, Answer is Background Image
-                elif question_svg and answer_type == SYMBOL_TYPES['BACKGROUND_CIRCLE']:
+            except:
+                pass
+            
+            # CASE 2: Question is SVG, Answer is Background Image
+            try:
+                question_svg = question_element.find_element(By.TAG_NAME, "svg")
+                if question_svg and answer_type == self.SYMBOL_TYPES['BACKGROUND_CIRCLE']:
                     # Background images are always circles - match if question is also a circle
-                    if question_type == SYMBOL_TYPES['CIRCLE']:
-                        confidence = 0.98  # High confidence for circle-to-background-circle
+                    if question_type == self.SYMBOL_TYPES['CIRCLE']:
+                        confidence = 0.98
                         if confidence > highest_confidence:
                             highest_confidence = confidence
                             best_match = {
@@ -577,21 +623,24 @@ class UltimateShapeSolver:
                                 'exact': True,
                                 'matchType': 'svg_to_background'
                             }
-                
-                # CASE 3: Question is Background Image, Answer is Background Image
-                elif question_type == SYMBOL_TYPES['BACKGROUND_CIRCLE'] and answer_type == SYMBOL_TYPES['BACKGROUND_CIRCLE']:
-                    confidence = 1.0  # Perfect match - both are background circles
-                    exact_matches.append({
-                        'link': link,
-                        'confidence': confidence,
-                        'exact': True,
-                        'matchType': 'background_to_background'
-                    })
-                
-                # CASE 4: Question is Background Image, Answer is SVG
-                elif question_type == SYMBOL_TYPES['BACKGROUND_CIRCLE'] and answer_svg:
-                    # Background circle question should match with SVG circle answer
-                    if answer_type == SYMBOL_TYPES['CIRCLE']:
+            except:
+                pass
+            
+            # CASE 3: Question is Background Image, Answer is Background Image
+            if question_type == self.SYMBOL_TYPES['BACKGROUND_CIRCLE'] and answer_type == self.SYMBOL_TYPES['BACKGROUND_CIRCLE']:
+                confidence = 1.0
+                exact_matches.append({
+                    'link': link,
+                    'confidence': confidence,
+                    'exact': True,
+                    'matchType': 'background_to_background'
+                })
+            
+            # CASE 4: Question is Background Image, Answer is SVG
+            if question_type == self.SYMBOL_TYPES['BACKGROUND_CIRCLE']:
+                try:
+                    answer_svg = link.find_element(By.TAG_NAME, "svg")
+                    if answer_svg and answer_type == self.SYMBOL_TYPES['CIRCLE']:
                         confidence = 0.98
                         if confidence > highest_confidence:
                             highest_confidence = confidence
@@ -601,47 +650,26 @@ class UltimateShapeSolver:
                                 'exact': True,
                                 'matchType': 'background_to_svg'
                             }
-                            
-            except Exception as e:
-                continue
+                except:
+                    pass
 
         # Return exact match if available
         if exact_matches:
             return exact_matches[0]
 
         # Return best match if confidence is high enough
-        if best_match and best_match['confidence'] >= 0.90:  # Same threshold as userscript
+        if best_match and best_match['confidence'] >= CONFIG['minimum_confidence']:
             return best_match
 
         return None
 
-    def find_question_element(self):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Find the question element (could be SVG or background image)"""
+    def safe_click_v3_4(self, element):
+        """EXACT SAME AS USERSCRIPT v3.4: SAFE CLICK with anti-detection"""
         try:
-            # First try to find SVG element
-            svg_elements = self.driver.find_elements(By.TAG_NAME, "svg")
-            if svg_elements:
-                # Return the parent div or the SVG itself
-                parent = svg_elements[0].find_element(By.XPATH, "..")
-                if parent:
-                    return parent
-                return svg_elements[0]
+            if self.is_behavior_suspicious() or self.state['is_in_cooldown']:
+                self.logger.info("⏳ Safety cooldown active")
+                return False
             
-            # Then try to find background image element
-            divs = self.driver.find_elements(By.TAG_NAME, "div")
-            for div in divs:
-                bg_image = div.value_of_css_property('background-image')
-                if bg_image and 'img.gif' in bg_image:
-                    return div
-            
-            return None
-            
-        except Exception as e:
-            return None
-
-    def safe_click(self, element):
-        """SAFE CLICK with anti-detection delay"""
-        try:
             # Add random delay before clicking (anti-detection)
             click_delay = random.uniform(0.5, 1.5)
             self.logger.info(f"⏰ Pre-click delay: {click_delay:.2f}s")
@@ -649,7 +677,13 @@ class UltimateShapeSolver:
             
             element.click()
             self.logger.info("✅ Click executed successfully!")
+            
+            self.state['click_count'] += 1
+            self.state['last_click_time'] = time.time()
+            self.state['last_action_time'] = time.time()
+            
             return True
+            
         except StaleElementReferenceException:
             self.logger.info("🔄 Element went stale during click - refreshing page")
             self.driver.get("https://adsha.re/surf")
@@ -659,14 +693,49 @@ class UltimateShapeSolver:
             self.logger.error(f"Click error: {e}")
             return False
 
+    def find_question_element_v3_4(self):
+        """EXACT SAME AS USERSCRIPT v3.4: Find question element (SVG or background image)"""
+        try:
+            # First try to find SVG element
+            svg_elements = self.driver.find_elements(By.TAG_NAME, "svg")
+            for svg in svg_elements:
+                # Check if this SVG is the question (contains gray #808080)
+                svg_html = svg.get_attribute('innerHTML')
+                if svg_html and '#808080' in svg_html:
+                    # Return the parent div or the SVG itself
+                    parent = svg.find_element(By.XPATH, "./..")
+                    if parent:
+                        return parent
+                    return svg
+            
+            # If no SVG found, look for background image elements
+            divs = self.driver.find_elements(By.TAG_NAME, "div")
+            for div in divs:
+                bg_image = div.value_of_css_property('background-image')
+                if bg_image and 'img.gif' in bg_image:
+                    return div
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error finding question element: {e}")
+            return None
+
     def solve_symbol_game_v3_4(self):
-        """EXACT SAME LOGIC AS USERSCRIPT v3.4: Main solver with PERFECT accuracy"""
+        """EXACT SAME AS USERSCRIPT v3.4: Main game solving with PERFECT accuracy"""
         if not self.state['is_running'] or self.state['is_in_cooldown']:
             return False
         
         try:
-            # Find the question element (EXACT SAME LOGIC)
-            question_element = self.find_question_element()
+            # Occasionally take breaks - EXACT SAME LOGIC
+            if self.state['consecutive_rounds'] > 15 and random.random() < 0.3:
+                self.logger.info("💤 Taking a short break...")
+                self.start_cooldown(10000 + random.randint(0, 20000))
+                self.state['consecutive_rounds'] = 0
+                return False
+            
+            # Find the question element (could be SVG or background image)
+            question_element = self.find_question_element_v3_4()
             
             if not question_element:
                 self.state['no_question_count'] += 1
@@ -681,82 +750,64 @@ class UltimateShapeSolver:
                     )
                     self.smart_delay()
                     self.state['no_question_count'] = 0
-                    return False
-                
                 return False
             
             # Reset counter when question is found
             self.state['no_question_count'] = 0
             
-            # Get question type for logging
-            question_type = self.classify_symbol_type(question_element)
-            self.logger.info(f"🎯 Question detected! Type: {question_type}")
+            links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re'], a[href*='symbol-matching-game']")
             
-            # Find all answer links
-            links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='adsha.re']")
-            
-            # Find the best possible match with high confidence (EXACT SAME LOGIC)
+            # Find the best possible match with high confidence
             best_match = self.find_best_match_v3_4(question_element, links)
             
             if best_match:
-                # SMART DELAY before clicking
-                self.smart_delay()
+                question_type = self.classify_symbol_type(question_element)
+                self.logger.info(f"🎯 Question detected! Type: {question_type}")
                 
-                # Use safe click
-                if self.safe_click(best_match['link']):
+                if self.safe_click_v3_4(best_match['link']):
                     self.state['total_solved'] += 1
-                    self.state['consecutive_fails'] = 0
                     self.state['consecutive_rounds'] += 1
+                    self.state['consecutive_fails'] = 0
+                    self.state['consecutive_match_fails'] = 0
                     
                     self.update_performance_metrics()
                     
                     match_type = "EXACT" if best_match['exact'] else "FUZZY"
-                    self.logger.info(f"✅ {match_type} Match! ({best_match['matchType']}) Confidence: {(best_match['confidence'] * 100):.1f}% | Total: {self.state['total_solved']}")
+                    source = best_match.get('matchType', 'UNKNOWN')
+                    self.logger.info(f"✅ {match_type} Match! ({source}) Confidence: {(best_match['confidence'] * 100):.1f}% | Total: {self.state['total_solved']}")
                     
-                    # Wait for new elements
-                    try:
-                        wait_time = random.uniform(1, 3)
-                        WebDriverWait(self.driver, wait_time).until(
-                            EC.presence_of_element_located((By.TAG_NAME, "body"))
-                        )
-                        return True
-                    except TimeoutException:
-                        return False
-                else:
-                    return False
+                    return True
             else:
-                # No good match found
-                self.state['consecutive_fails'] += 1
+                # No good match found - wait and retry
+                self.state['consecutive_match_fails'] += 1
+                question_type = self.classify_symbol_type(question_element)
                 
-                # Log detailed info about the failed match
-                svg_answers = len([link for link in links if link.find_elements(By.TAG_NAME, "svg")])
-                background_answers = len([link for link in links if self.classify_symbol_type(link) == SYMBOL_TYPES['BACKGROUND_CIRCLE']])
+                background_answers = sum(1 for link in links if self.classify_symbol_type(link) == self.SYMBOL_TYPES['BACKGROUND_CIRCLE'])
+                svg_answers = sum(1 for link in links if self.has_svg(link))
                 
                 self.logger.info(f"🔍 No high-confidence match found. Question: {question_type}, SVG answers: {svg_answers}, Image answers: {background_answers}")
                 
                 # If multiple consecutive fails, take longer break
-                if self.state['consecutive_fails'] > 3:
-                    self.logger.info("⚠️ Multiple fails detected, extended cooldown")
+                if self.state['consecutive_match_fails'] > 3:
+                    self.logger.info("⚠️ Multiple match fails detected, extended cooldown")
                     self.start_cooldown(15000)
-                    self.state['consecutive_fails'] = 0
+                    self.state['consecutive_match_fails'] = 0
                 
                 return False
-            
+                
         except Exception as e:
             self.logger.error(f"Solver error: {e}")
             self.state['consecutive_fails'] += 1
+            self.state['consecutive_match_fails'] += 1
             return False
 
-    def start_cooldown(self, duration=30000):
-        """Start cooldown period"""
-        self.state['is_in_cooldown'] = True
-        self.logger.info(f"😴 Cooldown activated for {duration/1000}s")
-        threading.Timer(duration / 1000, self.end_cooldown).start()
-
-    def end_cooldown(self):
-        """End cooldown period"""
-        self.state['is_in_cooldown'] = False
-        self.logger.info("✅ Cooldown ended")
+    def has_svg(self, element):
+        """Check if element contains SVG"""
+        try:
+            element.find_element(By.TAG_NAME, "svg")
+            return True
+        except:
+            return False
 
     # ==================== PAGE STATE DETECTION ====================
     def detect_page_state(self):
@@ -773,7 +824,7 @@ class UltimateShapeSolver:
                 return "LOGIN_REQUIRED"
             elif "adsha.re/exchange" in current_url:
                 return "WRONG_CLICK_REDIRECT"
-            elif "surf" in current_url and "svg" in page_source:
+            elif "surf" in current_url and ("svg" in page_source or "img.gif" in page_source):
                 return "GAME_ACTIVE"
             elif "surf" in current_url:
                 return "GAME_LOADING"
@@ -815,11 +866,6 @@ class UltimateShapeSolver:
                 self.logger.info("Game loading - waiting...")
                 time.sleep(5)
                 return self.ensure_correct_page()
-            elif page_state == "MAINTENANCE_MODE":
-                self.logger.error("Site under maintenance - waiting...")
-                self.send_telegram("🔧 Site under maintenance - waiting 5 minutes")
-                time.sleep(300)
-                return self.ensure_correct_page()
             else:
                 self.logger.info(f"Wrong page state: {page_state} - redirecting to surf...")
                 self.driver.get("https://adsha.re/surf")
@@ -849,126 +895,72 @@ class UltimateShapeSolver:
         
         metrics['last_hour_count'] += 1
 
-    def get_performance_status(self):
-        """Get performance metrics for status"""
-        metrics = self.state['performance_metrics']
-        
-        if metrics['games_per_hour'] == 0:
-            return ""
-        
-        return f"""
-📈 <b>PERFORMANCE METRICS</b>
-⚡ Games/Hour: {metrics['games_per_hour']:.1f}
-🕒 Running Time: {self.format_running_time()}
-"""
-
-    def format_running_time(self):
-        """Format running time for display"""
-        if self.state['performance_metrics']['start_time'] == 0:
-            return "0h 0m"
-        
-        seconds = time.time() - self.state['performance_metrics']['start_time']
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        return f"{hours}h {minutes}m"
-
-    # ==================== FIXED LEADERBOARD PARSING ====================
+    # ==================== SIMPLIFIED LEADERBOARD ====================
     def parse_leaderboard(self):
-        """FIXED leaderboard parsing"""
+        """SIMPLIFIED leaderboard - will fix later"""
         try:
             if not self.is_browser_alive() or not self.state['is_logged_in']:
                 self.logger.info("Browser not ready for leaderboard")
                 return None
             
-            self.logger.info("Fetching leaderboard...")
-            
-            # Open leaderboard in same tab
-            self.driver.get("https://adsha.re/ten")
-            time.sleep(5)
-            
-            # Check if we're still logged in
-            current_url = self.driver.current_url.lower()
-            if "login" in current_url:
-                self.logger.error("Not logged in when trying to fetch leaderboard")
-                self.state['is_logged_in'] = False
-                # Go back to surf page
-                self.driver.get("https://adsha.re/surf")
-                return None
-            
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            leaderboard = []
-            
-            # Find all leaderboard entries
-            leaderboard_divs = soup.find_all('div', style=lambda x: x and 'width:250px' in x and 'margin:5px auto' in x)
-
-            for i, div in enumerate(leaderboard_divs[:10]):
-                try:
-                    text = div.get_text(strip=True)
-                    
-                    # Extract user ID
-                    user_match = re.search(r'#(\d+)(?:\s*-|\s*\/)' , text)
-                    if not user_match:
-                        user_match = re.search(r'#(\d+)', text)
-                    user_id = int(user_match.group(1)) if user_match else None
-                    
-                    if not user_id:
-                        continue
-                    
-                    # Extract total surfed
-                    surfed_match = re.search(r'Surfed in 3 Days:\s*([\d,]+)', text)
-                    if not surfed_match:
-                        surfed_match = re.search(r'Surfed:\s*([\d,]+)', text)
-                    
-                    total_surfed = int(surfed_match.group(1).replace(',', '')) if surfed_match else 0
-                    
-                    # Extract today's credits
-                    today_match = re.search(r'T:\s*(\d+)', text)
-                    today_credits = int(today_match.group(1)) if today_match else 0
-                    
-                    # Extract yesterday credits
-                    yesterday_match = re.search(r'Y:\s*(\d+)', text)
-                    yesterday_credits = int(yesterday_match.group(1)) if yesterday_match else 0
-                    
-                    leaderboard.append({
-                        'rank': i + 1,
-                        'user_id': user_id,
-                        'total_surfed': total_surfed,
-                        'today_credits': today_credits,
-                        'yesterday_credits': yesterday_credits,
-                        'is_me': user_id == 4242
-                    })
-                    
-                except Exception as e:
-                    continue
-            
-            # Go back to surf page
-            self.driver.get("https://adsha.re/surf")
-            time.sleep(3)
-            
-            self.state['last_leaderboard_check'] = time.time()
-            self.state['leaderboard'] = leaderboard
-            self.state['my_position'] = next((item for item in leaderboard if item['is_me']), None)
-            
-            if leaderboard:
-                self.logger.info(f"✅ Leaderboard updated with {len(leaderboard)} entries")
-                
-            return leaderboard
+            self.logger.info("⏳ Leaderboard parsing disabled for now")
+            return []
             
         except Exception as e:
-            self.logger.error(f"Leaderboard parsing error: {e}")
-            try:
-                self.driver.get("https://adsha.re/surf")
-            except:
-                pass
+            self.logger.info(f"Leaderboard temporarily disabled: {e}")
             return None
 
-    # ==================== ULTIMATE SOLVER LOOP ====================
-    def solver_loop(self):
-        """PERFECT SHAPE MATCHING solving loop with v3.4 logic"""
+    def leaderboard_monitor(self):
+        """Simplified leaderboard monitoring"""
+        self.logger.info("Starting leaderboard monitoring...")
+        
+        while self.state['is_running']:
+            try:
+                # Just sleep, leaderboard disabled for now
+                for _ in range(CONFIG['leaderboard_check_interval']):
+                    if not self.state['is_running']:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                self.logger.error(f"Leaderboard monitoring error: {e}")
+                time.sleep(300)
+
+    # ==================== SMART FAILURE HANDLING ====================
+    def handle_consecutive_failures(self):
+        """SMART failure handling"""
+        current_fails = self.state['consecutive_fails']
+        
+        if not self.is_browser_alive():
+            self.logger.error("Browser dead - restarting with login...")
+            self.send_telegram("🔄 Browser dead - restarting with fresh login...")
+            if self.restart_browser():
+                self.state['consecutive_fails'] = 0
+                self.state['element_not_found_count'] = 0
+                self.state['no_question_count'] = 0
+            return
+        
+        if current_fails >= CONFIG['restart_after_failures']:
+            self.logger.warning("Multiple consecutive failures - restarting browser...")
+            self.send_telegram("🔄 Multiple failures - restarting browser...")
+            if self.restart_browser():
+                self.state['consecutive_fails'] = 0
+                self.state['element_not_found_count'] = 0
+                self.state['no_question_count'] = 0
+        
+        elif current_fails >= CONFIG['max_consecutive_failures']:
+            self.logger.error("CRITICAL: Too many failures! Stopping...")
+            self.send_telegram("🚨 CRITICAL ERROR - Too many consecutive failures - Stopping solver")
+            self.stop()
+
+    # ==================== ULTIMATE SOLVER LOOP v3.4 ====================
+    def solver_loop_v3_4(self):
+        """PERFECT SHAPE MATCHING solving loop v3.4"""
         self.logger.info("Starting PERFECT SHAPE MATCHING solver v3.4...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
         self.state['session_start_time'] = time.time()
+        self.state['last_action_time'] = time.time()
         
         if not self.driver:
             if not self.setup_firefox():
@@ -996,21 +988,13 @@ class UltimateShapeSolver:
                     self.state['consecutive_fails'] += 1
                     continue
                 
-                # Use EXACT SAME v3.4 solving logic
                 game_solved = self.solve_symbol_game_v3_4()
                 
                 if not game_solved:
-                    self.state['consecutive_fails'] += 1
-                    if self.state['consecutive_fails'] >= CONFIG['restart_after_failures']:
-                        self.logger.warning("Multiple consecutive failures - restarting browser...")
-                        if self.restart_browser():
-                            self.state['consecutive_fails'] = 0
-                    else:
-                        # Random delay between attempts
-                        retry_delay = random.uniform(2, 5)
-                        time.sleep(retry_delay)
-                else:
-                    self.state['consecutive_fails'] = 0
+                    self.handle_consecutive_failures()
+                    # Random delay between attempts for anti-detection
+                    retry_delay = random.uniform(2, 5)
+                    time.sleep(retry_delay)
                 
                 cycle_count += 1
                     
@@ -1023,25 +1007,6 @@ class UltimateShapeSolver:
             self.logger.error("CRITICAL: Too many failures, stopping...")
             self.stop()
 
-    def leaderboard_monitor(self):
-        """Enhanced leaderboard monitoring"""
-        self.logger.info("Starting leaderboard monitoring...")
-        
-        while self.state['is_running']:
-            try:
-                if self.state['auto_compete']:
-                    leaderboard = self.parse_leaderboard()
-                    # We'll process leaderboard data here when needed
-                
-                for _ in range(CONFIG['leaderboard_check_interval']):
-                    if not self.state['is_running']:
-                        break
-                    time.sleep(1)
-                    
-            except Exception as e:
-                self.logger.error(f"Leaderboard monitoring error: {e}")
-                time.sleep(300)
-
     # ==================== ENHANCED CONTROL METHODS ====================
     def start(self):
         """Enhanced solver start"""
@@ -1053,12 +1018,15 @@ class UltimateShapeSolver:
         self.state['element_not_found_count'] = 0
         self.state['wrong_click_count'] = 0
         self.state['no_question_count'] = 0
-        self.state['consecutive_rounds'] = 0
         self.state['click_count'] = 0
+        self.state['consecutive_rounds'] = 0
+        self.state['consecutive_match_fails'] = 0
+        self.state['is_in_cooldown'] = False
         self.state['performance_metrics']['start_time'] = time.time()
         self.state['session_start_time'] = time.time()
+        self.state['last_action_time'] = time.time()
         
-        self.solver_thread = threading.Thread(target=self.solver_loop)
+        self.solver_thread = threading.Thread(target=self.solver_loop_v3_4)
         self.solver_thread.daemon = True
         self.solver_thread.start()
         
@@ -1092,9 +1060,6 @@ class UltimateShapeSolver:
 
     def status(self):
         """Enhanced status with all features"""
-        if time.time() - self.state['last_leaderboard_check'] > 1800:
-            self.parse_leaderboard()
-        
         status_text = f"""
 📊 <b>PERFECT SHAPE MATCHING SOLVER v3.4 STATUS</b>
 ⏰ {self.get_ist_time()}
@@ -1102,6 +1067,7 @@ class UltimateShapeSolver:
 🎮 Games Solved: {self.state['total_solved']}
 🔐 Logged In: {'✅' if self.state['is_logged_in'] else '❌'}
 ⚠️ Fails: {self.state['consecutive_fails']}/{CONFIG['max_consecutive_failures']}
+🚨 Wrong Clicks: {self.state['wrong_click_count']}
 """
         
         # Performance metrics
@@ -1119,6 +1085,16 @@ class UltimateShapeSolver:
 """
         
         return status_text
+
+    def format_running_time(self):
+        """Format running time for display"""
+        if self.state['performance_metrics']['start_time'] == 0:
+            return "0h 0m"
+        
+        seconds = time.time() - self.state['performance_metrics']['start_time']
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
 
 # ==================== ULTIMATE TELEGRAM BOT ====================
 class UltimateTelegramBot:
@@ -1168,46 +1144,49 @@ class UltimateTelegramBot:
         elif text.startswith('/target'):
             parts = text.split()
             if len(parts) == 2 and parts[1].isdigit():
-                response = "🎯 Target feature coming soon"
+                response = "🎯 Target setting disabled in v3.4"
             else:
-                response = "Usage: /target 3000"
+                response = "Usage: /target disabled in v3.4"
+        elif text.startswith('/compete'):
+            response = "🏆 Compete mode disabled in v3.4"
         elif text.startswith('/leaderboard'):
-            leaderboard = self.solver.parse_leaderboard()
-            if leaderboard:
-                leader_text = "🏆 <b>TOP 10 LEADERBOARD</b>\n"
-                for entry in leaderboard:
-                    marker = " 👈 YOU" if entry['is_me'] else ""
-                    leader_text += f"{entry['rank']}. #{entry['user_id']} - {entry['total_surfed']} total (T:{entry['today_credits']} Y:{entry['yesterday_credits']}){marker}\n"
-                response = leader_text
-            else:
-                response = "❌ Could not fetch leaderboard"
+            response = "⏳ Leaderboard temporarily disabled - focusing on v3.4 solving"
         elif text.startswith('/login'):
             response = "🔐 Attempting login..." if self.solver.force_login() else "❌ Login failed"
         elif text.startswith('/performance'):
-            response = self.solver.get_performance_status()
+            response = self.solver.status()
         elif text.startswith('/restart'):
             response = "🔄 Restarting browser..." if self.solver.restart_browser() else "❌ Restart failed"
+        elif text.startswith('/wrongclicks'):
+            response = f"🚨 Total wrong clicks: {self.solver.state['wrong_click_count']}"
         elif text.startswith('/help'):
             response = """
 🤖 <b>PERFECT SHAPE MATCHING AdShare Solver v3.4</b>
 
 <b>EXACT SAME LOGIC AS USERSCRIPT v3.4</b>
 ✅ Perfect accuracy with background image support
-✅ Auto-refresh after 3 no-question attempts  
 ✅ All symbol types: circles, squares, diamonds, arrows
-✅ Working leaderboard parsing
-✅ Enhanced anti-detection
+✅ Background image matching enabled
+✅ Anti-detection delays and cooldowns
+✅ Auto-refresh on stuck pages
 
-<b>Commands:</b>
+<b>Basic Commands:</b>
 /start - Start solver
 /stop - Stop solver  
-/status - Show status
+/status - Status with performance
 /screenshot - Get screenshot
 /login - Force login
 /restart - Restart browser
-/leaderboard - Show leaderboard
-/performance - Performance metrics
-/help - Show this help
+/wrongclicks - Show wrong click count
+
+<b>v3.4 FEATURES:</b>
+🎯 EXACT same logic as userscript v3.4
+🖼️ Background image support
+🔍 Enhanced symbol classification  
+⚡ Perfect accuracy mode
+🛡️ Anti-detection features
+
+<b>Note:</b> Target and compete modes disabled to focus on perfect solving
 """
         
         if response:
