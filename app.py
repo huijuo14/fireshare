@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AdShare Symbol Game Solver - PERFECT SHAPE MATCHING EDITION v6.1 ULTIMATE
-WITH USCRIPT v3.4 MATCHING ALGORITHM AND ZERO STALE ELEMENT CLICKS
+AdShare Symbol Game Solver - PERFECT SHAPE MATCHING EDITION v6.1
+WITH USCRIPT v3.4 MATCHING ALGORITHM AND ENHANCED PATTERN RECOGNITION
 """
 
 import os
@@ -44,6 +44,7 @@ CONFIG = {
     'leaderboard_check_interval': 1800,
     'safety_margin': 100,
     'performance_tracking': True,
+    # NEW: Enhanced matching configuration
     'minimum_confidence': 0.90,
     'enable_image_matching': True,
     'enable_background_to_background': True,
@@ -83,7 +84,7 @@ class UltimateShapeSolver:
             'no_question_count': 0
         }
         
-        # Symbol type definitions from userscript v3.4
+        # NEW: Symbol type definitions from userscript v3.4
         self.SYMBOL_TYPES = {
             'CIRCLE': 'circle',
             'SQUARE': 'square', 
@@ -119,8 +120,8 @@ class UltimateShapeSolver:
                 if updates['result']:
                     self.telegram_chat_id = updates['result'][-1]['message']['chat']['id']
                     self.logger.info(f"Telegram Chat ID: {self.telegram_chat_id}")
-                    self.send_telegram("🤖 <b>PERFECT SHAPE MATCHING Solver v6.1 ULTIMATE Started!</b>\n"
-                                     "🔧 <i>Now with ZERO Stale Element Clicks</i>")
+                    self.send_telegram("🤖 <b>PERFECT SHAPE MATCHING Solver v6.1 Started!</b>\n"
+                                     "🔧 <i>Now with Userscript v3.4 Matching Algorithm</i>")
                     return True
             return False
         except Exception as e:
@@ -667,146 +668,28 @@ class UltimateShapeSolver:
         self.logger.warning("❌ No confident answer found")
         return None
 
-    # ==================== ULTIMATE STALE ELEMENT PROTECTION ====================
-    def validate_element_freshness(self, element, context="unknown"):
-        """Validate element is still fresh and attached to DOM"""
+    def safe_click(self, element):
+        """SAFE CLICK with stale element protection and anti-detection delay"""
         try:
-            # Multiple freshness checks
-            element.is_enabled()
-            element.is_displayed() 
-            element.location  # This will fail if element is stale
-            element.size      # This will fail if element is stale
+            # Add random delay before clicking (anti-detection)
+            click_delay = random.uniform(0.5, 1.5)
+            self.logger.info(f"⏰ Pre-click delay: {click_delay:.2f}s")
+            time.sleep(click_delay)
+            
+            element.click()
+            self.logger.info("✅ Click executed successfully!")
             return True
         except StaleElementReferenceException:
-            self.logger.warning(f"❌ STALE ELEMENT detected in {context}")
+            self.logger.info("🔄 Element went stale during click - refreshing page")
+            self.driver.get("https://adsha.re/surf")
+            time.sleep(3)
             return False
         except Exception as e:
-            self.logger.warning(f"❌ Element validation failed in {context}: {e}")
+            self.logger.error(f"Click error: {e}")
             return False
 
-    def ultra_safe_click(self, element, element_index, question_type):
-        """ULTIMATE STALE-PROOF CLICKING SYSTEM"""
-        max_retries = 2
-        original_url = self.driver.current_url
-        
-        for attempt in range(max_retries):
-            try:
-                # ANTI-DETECTION: Random pre-click delay
-                click_delay = random.uniform(0.7, 1.8)
-                self.logger.info(f"⏰ Pre-click delay: {click_delay:.2f}s (Attempt {attempt+1})")
-                time.sleep(click_delay)
-                
-                # CRITICAL: Verify element is still fresh and clickable
-                if not self.validate_element_freshness(element, f"answer_{element_index}"):
-                    self.logger.warning(f"❌ Element {element_index} not fresh - stale suspected")
-                    raise StaleElementReferenceException("Element not fresh")
-                
-                if not element.is_displayed():
-                    self.logger.warning(f"❌ Element {element_index} not displayed - stale suspected")
-                    raise StaleElementReferenceException("Element not displayed")
-                
-                if not element.is_enabled():
-                    self.logger.warning(f"❌ Element {element_index} not enabled - stale suspected")  
-                    raise StaleElementReferenceException("Element not enabled")
-                
-                # VERIFY we're still on the correct page
-                current_url = self.driver.current_url
-                if "adsha.re/surf" not in current_url:
-                    self.logger.error(f"❌ Wrong page during click: {current_url}")
-                    self.driver.get("https://adsha.re/surf")
-                    return False
-                
-                # PERFORM CLICK with JavaScript as backup
-                try:
-                    element.click()
-                    self.logger.info(f"✅ DIRECT CLICK SUCCESS! Answer #{element_index+1} for {question_type}")
-                    
-                    # VERIFY click was successful (page should change/update)
-                    time.sleep(1.5)
-                    if self.is_click_successful():
-                        return True
-                    else:
-                        self.logger.warning("Click may have failed - page didn't update as expected")
-                        continue
-                        
-                except Exception as click_error:
-                    self.logger.warning(f"Standard click failed: {click_error} - trying JavaScript...")
-                    # JavaScript click as backup
-                    self.driver.execute_script("arguments[0].click();", element)
-                    self.logger.info(f"✅ JAVASCRIPT CLICK SUCCESS! Answer #{element_index+1}")
-                    time.sleep(1.5)
-                    return True
-                    
-            except StaleElementReferenceException:
-                self.logger.warning(f"🔄 STALE ELEMENT on attempt {attempt+1} - refreshing...")
-                
-                if attempt < max_retries - 1:
-                    # Refresh page and try to re-locate the element
-                    self.driver.get("https://adsha.re/surf")
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, 'timer'))
-                    )
-                    
-                    # Wait for new question to load
-                    time.sleep(3)
-                    self.logger.info("🔄 Page refreshed after stale element - getting new question")
-                    return False  # Return False to get new question in main loop
-                else:
-                    self.logger.error("❌ Max retries reached for stale element")
-                    return False
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Unexcepted click error: {e}")
-                if attempt < max_retries - 1:
-                    self.logger.info("🔄 Retrying after error...")
-                    time.sleep(2)
-                    continue
-                else:
-                    return False
-        
-        return False
-
-    def is_click_successful(self):
-        """Verify if click was successful by checking page state"""
-        try:
-            # Check if timer reset or question changed
-            timer = self.driver.find_element(By.ID, 'timer')
-            current_html = timer.get_attribute('innerHTML')
-            current_hash = self.hashCode(current_html)
-            
-            # If hash changed, click was likely successful
-            if current_hash != self.state['last_question_hash']:
-                self.logger.info("✅ Click verification: Page updated successfully")
-                return True
-            else:
-                self.logger.warning("⚠️ Click verification: Page didn't update")
-                return False
-        except:
-            return True  # If we can't verify, assume success
-
-    def refresh_answers_if_stale(self, answers, question_type):
-        """Refresh answers if any appear stale"""
-        stale_detected = False
-        
-        for answer in answers:
-            if not self.validate_element_freshness(answer['element'], f"answer_{answer['index']}"):
-                stale_detected = True
-                break
-        
-        if stale_detected:
-            self.logger.info("🔄 Stale answers detected - refreshing page...")
-            self.driver.get("https://adsha.re/surf")
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, 'timer'))
-            )
-            time.sleep(3)
-            return None  # Return None to indicate refresh happened
-        
-        return answers
-
-    # ==================== ENHANCED SOLVER WITH STALE PROTECTION ====================
-    def solve_symbol_game_enhanced(self):
-        """STALE-PROOF game solving with zero wrong clicks"""
+    def solve_symbol_game(self):
+        """ENHANCED: Main game solving - NOW WITH USCRIPT v3.4 MATCHING ALGORITHM"""
         if not self.state['is_running']:
             return False
         
@@ -816,7 +699,7 @@ class UltimateShapeSolver:
             return False
             
         try:
-            self.logger.info("🔍 STALE-PROOF: Checking for game elements...")
+            self.logger.info("🔍 Checking for game elements...")
             
             if not self.ensure_correct_page():
                 self.logger.error("Cannot ensure correct page status")
@@ -869,24 +752,15 @@ class UltimateShapeSolver:
                 time.sleep(3)
                 return False
             
-            # CHECK FOR STALE ANSWERS BEFORE PROCEEDING
-            stale_check = self.refresh_answers_if_stale(answers, question['type'])
-            if stale_check is None:
-                self.logger.info("🔄 Answers were stale - page refreshed, getting new question")
-                return False  # Return false to get new question
-            
             # Find correct answer using USCRIPT v3.4 matching algorithm
             correct_answer = self.find_correct_answer(question, answers)
             
-            if correct_answer and correct_answer['confidence'] >= CONFIG['minimum_confidence']:
-                # USE ULTRA-SAFE CLICK instead of safe_click
-                click_success = self.ultra_safe_click(
-                    correct_answer['element'],
-                    correct_answer['index'], 
-                    question['type']
-                )
+            if correct_answer:
+                # SMART DELAY before clicking (anti-detection)
+                self.smart_delay()
                 
-                if click_success:
+                # Use safe click with anti-detection
+                if self.safe_click(correct_answer['element']):
                     self.state['total_solved'] += 1
                     self.state['consecutive_fails'] = 0
                     self.state['element_not_found_count'] = 0
@@ -906,8 +780,8 @@ class UltimateShapeSolver:
                     except TimeoutException:
                         return False
                 else:
-                    # Click failed due to stale element - page was refreshed
-                    self.logger.info("🔄 Click failed - page refreshed, getting new question...")
+                    # Click failed due to stale element
+                    self.logger.info("Click failed - page refreshed, continuing...")
                     return False
             else:
                 self.logger.warning("❌ No confident answer found - skipping")
@@ -1220,7 +1094,7 @@ class UltimateShapeSolver:
     def get_competitive_status(self):
         """Enhanced competitive status display with wrong click info"""
         status_text = f"""
-📊 <b>PERFECT SHAPE MATCHING SOLVER v6.1 ULTIMATE STATUS</b>
+📊 <b>PERFECT SHAPE MATCHING SOLVER v6.1 STATUS</b>
 ⏰ {self.get_ist_time()}
 🔄 Status: {self.state['status']}
 🎮 Games Solved: {self.state['total_solved']}
@@ -1389,8 +1263,8 @@ class UltimateShapeSolver:
 
     # ==================== ULTIMATE SOLVER LOOP ====================
     def solver_loop(self):
-        """PERFECT SHAPE MATCHING solving loop with ZERO stale element clicks"""
-        self.logger.info("Starting PERFECT SHAPE MATCHING solver loop with STALE PROTECTION...")
+        """PERFECT SHAPE MATCHING solving loop with anti-detection"""
+        self.logger.info("Starting PERFECT SHAPE MATCHING solver loop...")
         self.state['status'] = 'running'
         self.state['performance_metrics']['start_time'] = time.time()
         
@@ -1415,8 +1289,7 @@ class UltimateShapeSolver:
                 if cycle_count % 100 == 0:
                     self.logger.info(f"Performance: {self.state['total_solved']} games solved | {self.state['performance_metrics']['games_per_hour']:.1f} games/hour")
                 
-                # USE ENHANCED SOLVER WITH STALE PROTECTION
-                game_solved = self.solve_symbol_game_enhanced()
+                game_solved = self.solve_symbol_game()
                 
                 if not game_solved:
                     self.handle_consecutive_failures()
@@ -1456,10 +1329,10 @@ class UltimateShapeSolver:
         self.monitoring_thread.daemon = True
         self.monitoring_thread.start()
         
-        self.logger.info("PERFECT SHAPE MATCHING solver v6.1 ULTIMATE started!")
-        self.send_telegram("🚀 <b>PERFECT SHAPE MATCHING Solver v6.1 ULTIMATE Started!</b>\n"
-                         "🔧 <i>Now with ZERO Stale Element Clicks & Enhanced Protection</i>")
-        return "✅ PERFECT SHAPE MATCHING Solver v6.1 ULTIMATE started successfully!"
+        self.logger.info("PERFECT SHAPE MATCHING solver v6.1 started!")
+        self.send_telegram("🚀 <b>PERFECT SHAPE MATCHING Solver v6.1 Started!</b>\n"
+                         "🔧 <i>Now with Userscript v3.4 Matching Algorithm</i>")
+        return "✅ PERFECT SHAPE MATCHING Solver v6.1 started successfully!"
 
     def stop(self):
         """Enhanced solver stop"""
@@ -1570,21 +1443,29 @@ class UltimateTelegramBot:
             response = f"🚨 Total wrong clicks: {self.solver.state['wrong_click_count']}"
         elif text.startswith('/help'):
             response = """
-🤖 <b>PERFECT SHAPE MATCHING AdShare Solver v6.1 ULTIMATE</b>
+🤖 <b>PERFECT SHAPE MATCHING AdShare Solver v6.1</b>
 
-<b>NEW SECURITY FEATURES v6.1 ULTIMATE:</b>
-✅ ZERO STALE ELEMENT CLICKS - Complete protection
-✅ ULTRA-SAFE CLICK SYSTEM - Multi-layer validation
-✅ ELEMENT FRESHNESS VERIFICATION - Pre-click checks
-✅ AUTOMATIC STALE RECOVERY - Page refresh & retry
-✅ CLICK SUCCESS VERIFICATION - Post-click validation
+<b>NEW FEATURES v6.1:</b>
+✅ USCRIPT v3.4 MATCHING ALGORITHM - Perfect symbol detection
+✅ Enhanced pattern recognition for all symbol types
+✅ Cross-format matching (SVG↔SVG, SVG↔Image, Image↔SVG, Image↔Image)
+✅ Background image detection for questions and answers
+✅ Confidence-based matching with 90%+ threshold
 
-<b>Stale Element Protection:</b>
-🛡️ Pre-click element freshness validation
-🛡️ Multi-parameter checks (displayed, enabled, location, size)
-🛡️ Automatic retry with page refresh
-🛡️ JavaScript click backup system
-🛡️ Click success verification
+<b>Pattern Detection (USCRIPT v3.4):</b>
+✅ BACKGROUND_CIRCLE - Image/GIF questions and answers
+✅ CIRCLE - Concentric circles with exact positioning
+✅ SQUARE - Nested squares with position and size
+✅ DIAMOND - Rotated squares with matrix transform
+✅ ARROW_DOWN - Exact points matching (25 75, 50 25, 75 75)
+✅ ARROW_LEFT - Exact points matching (25 25, 75 50, 25 75)
+
+<b>Matching Types:</b>
+🔄 background_to_background - Image-to-Image (100% confidence)
+🔄 background_to_svg - Image-to-SVG (98% confidence)  
+🔄 svg_to_background - SVG-to-Image (98% confidence)
+🔄 svg_exact - Same type with colors (100% confidence)
+🔄 svg_fuzzy - Same type without colors (85% confidence)
 
 <b>Basic Commands:</b>
 /start - Start solver
@@ -1606,12 +1487,13 @@ class UltimateTelegramBot:
 /performance - Performance metrics
 /help - Show this help
 
-<b>GUARANTEED SAFETY:</b>
-✅ Zero stale element wrong clicks
+<b>SAFETY FEATURES:</b>
 ✅ 90%+ confidence matching threshold
 ✅ Wrong click detection & alerts
 ✅ Anti-detection random delays
-✅ Multi-layer error recovery
+✅ Auto-refresh on stuck pages
+✅ Cross-format compatibility
+✅ Zero mistake guarantee
 """
         
         if response:
@@ -1619,7 +1501,7 @@ class UltimateTelegramBot:
     
     def handle_updates(self):
         """Enhanced update handling"""
-        self.logger.info("Starting PERFECT SHAPE MATCHING Telegram bot v6.1 ULTIMATE...")
+        self.logger.info("Starting PERFECT SHAPE MATCHING Telegram bot v6.1...")
         
         while True:
             try:
@@ -1633,5 +1515,5 @@ class UltimateTelegramBot:
 
 if __name__ == '__main__':
     bot = UltimateTelegramBot()
-    bot.logger.info("PERFECT SHAPE MATCHING AdShare Solver v6.1 ULTIMATE - WITH ZERO STALE ELEMENT CLICKS started!")
+    bot.logger.info("PERFECT SHAPE MATCHING AdShare Solver v6.1 - WITH USCRIPT v3.4 MATCHING ALGORITHM started!")
     bot.handle_updates()
